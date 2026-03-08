@@ -27,7 +27,7 @@ package kvstore
 import (
 	"fmt"
 
-	. "github.com/littleclusters/lc/internal/attest"
+	. "github.com/clstr-io/clstr/internal/attest"
 )
 
 func LeaderElection() *Suite {

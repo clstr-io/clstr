@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	. "github.com/littleclusters/lc/internal/attest"
+	. "github.com/clstr-io/clstr/internal/attest"
 )
 
 func HTTPAPI() *Suite {
