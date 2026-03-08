@@ -1,4 +1,4 @@
-module github.com/littleclusters/lc
+module github.com/clstr-io/clstr
 
 go 1.25
 

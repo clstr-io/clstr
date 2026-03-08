@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const statePath = "lc.state"
+const statePath = "clstr.state"
 
 // State represents the challenge progress.
 type State struct {
@@ -14,11 +14,11 @@ type State struct {
 	Stage     string
 }
 
-// Load reads and parses the lc.state file.
+// Load reads and parses the clstr.state file.
 func Load() (*State, error) {
 	_, err := os.Stat(statePath)
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("Not in a challenge directory\nRun this command from a directory created with 'lc init <challenge>'")
+		return nil, fmt.Errorf("Not in a challenge directory\nRun this command from a directory created with 'clstr init <challenge>'")
 	}
 
 	bytes, err := os.ReadFile(statePath)
@@ -38,7 +38,7 @@ func Load() (*State, error) {
 	}, nil
 }
 
-// Save writes the state to the default lc.state file.
+// Save writes the state to the default clstr.state file.
 func Save(st *State) error {
 	return SaveTo(st, statePath)
 }

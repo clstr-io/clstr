@@ -5,7 +5,7 @@ import (
 	"strings"
 	"syscall"
 
-	. "github.com/littleclusters/lc/internal/attest"
+	. "github.com/clstr-io/clstr/internal/attest"
 )
 
 func CrashRecovery() *Suite {

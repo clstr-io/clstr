@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 
 	"github.com/fatih/color"
-	_ "github.com/littleclusters/lc/challenges"
-	"github.com/littleclusters/lc/internal/registry"
-	"github.com/littleclusters/lc/internal/state"
+	_ "github.com/clstr-io/clstr/challenges"
+	"github.com/clstr-io/clstr/internal/registry"
+	"github.com/clstr-io/clstr/internal/state"
 	commands "github.com/urfave/cli/v3"
 )
 
 const (
-	DocsBaseURL = "https://littleclusters.com"
+	DocsBaseURL = "https://docs.clstr.io"
 )
 
 var (
@@ -28,8 +28,8 @@ func createChallengeFiles(challenge *registry.Challenge, targetPath string) erro
 	scriptTemplate := `#!/bin/bash -e
 
 # This script builds and runs your implementation.
-# lc will execute this script to start your program.
-# "$@" passes command-line arguments from lc to your program, e.g.:
+# clstr will execute this script to start your program.
+# "$@" passes command-line arguments from clstr to your program, e.g.:
 #   --working-dir=<path>: Directory where your program should write files
 
 echo "Replace this line with the command that runs your implementation."
@@ -51,20 +51,20 @@ echo "Replace this line with the command that runs your implementation."
 		return fmt.Errorf("Failed to create README.md: %w", err)
 	}
 
-	// lc.state
+	// clstr.state
 	cfg := &state.State{
 		Challenge: challenge.Key,
 		Stage:     challenge.StageOrder[0],
 	}
-	statePath := filepath.Join(targetPath, "lc.state")
+	statePath := filepath.Join(targetPath, "clstr.state")
 	err = state.SaveTo(cfg, statePath)
 	if err != nil {
-		return fmt.Errorf("Failed to create lc.state: %w", err)
+		return fmt.Errorf("Failed to create clstr.state: %w", err)
 	}
 
 	// .gitignore
 	gitignorePath := filepath.Join(targetPath, ".gitignore")
-	gitignoreContent := `.lc/`
+	gitignoreContent := `.clstr/`
 	err = os.WriteFile(gitignorePath, []byte(gitignoreContent), 0644)
 	if err != nil {
 		return fmt.Errorf("Failed to create .gitignore: %w", err)
@@ -78,7 +78,7 @@ func InitChallenge(ctx context.Context, cmd *commands.Command) error {
 	// Get Challenge
 	args := cmd.Args().Slice()
 	if len(args) == 0 {
-		return fmt.Errorf("Challenge name is required.\nUsage: lc init <challenge> [path]")
+		return fmt.Errorf("Challenge name is required.\nUsage: clstr init <challenge> [path]")
 	}
 
 	challengeKey := args[0]
@@ -110,16 +110,16 @@ func InitChallenge(ctx context.Context, cmd *commands.Command) error {
 		fmt.Printf("Created challenge in directory: ./%s\n", targetPath)
 	}
 
-	fmt.Println("  run.sh       - Builds and runs your implementation")
-	fmt.Println("  README.md    - Challenge overview and requirements")
-	fmt.Println("  lc.state     - Tracks your progress")
-	fmt.Printf("  .gitignore   - Ignores .lc/ working directory (server files and logs)\n\n")
+	fmt.Println("  run.sh         - Builds and runs your implementation")
+	fmt.Println("  README.md      - Challenge overview and requirements")
+	fmt.Println("  clstr.state    - Tracks your progress")
+	fmt.Printf("  .gitignore     - Ignores .clstr/ working directory (server files and logs)\n\n")
 
 	firstStageKey := challenge.StageOrder[0]
 	if targetPath == "." {
-		fmt.Printf("Implement %s stage, then run %s.\n", firstStageKey, yellow("'lc test'"))
+		fmt.Printf("Implement %s stage, then run %s.\n", firstStageKey, yellow("'clstr test'"))
 	} else {
-		fmt.Printf("cd %s and implement %s stage, then run %s.\n", targetPath, firstStageKey, yellow("'lc test'"))
+		fmt.Printf("cd %s and implement %s stage, then run %s.\n", targetPath, firstStageKey, yellow("'clstr test'"))
 	}
 
 	return nil
@@ -180,7 +180,7 @@ func Test(ctx context.Context, cmd *commands.Command) error {
 		challengeKey = cfg.Challenge
 		stageKey = cmd.Args().Slice()[0]
 	default:
-		return fmt.Errorf("Too many arguments.\nUsage: lc test [stage]")
+		return fmt.Errorf("Too many arguments.\nUsage: clstr test [stage]")
 	}
 
 	challenge, err := registry.GetChallenge(challengeKey)
@@ -225,7 +225,7 @@ func Test(ctx context.Context, cmd *commands.Command) error {
 
 	targetIndex := challenge.StageIndex(stageKey)
 	if targetIndex < challenge.Len()-1 {
-		fmt.Printf("\nRun %s to advance to the next stage.\n", yellow("'lc next'"))
+		fmt.Printf("\nRun %s to advance to the next stage.\n", yellow("'clstr next'"))
 	}
 
 	return nil
@@ -286,7 +286,7 @@ func NextStage(ctx context.Context, cmd *commands.Command) error {
 	fmt.Printf("Advanced to %s: %s\n\n", nextStageKey, nextStage.Name)
 	guideURL := fmt.Sprintf("%s/%s/%s", DocsBaseURL, cfg.Challenge, nextStageKey)
 	fmt.Printf("Read the guide: \033]8;;%s\033\\%s/%s/%s\033]8;;\033\\\n\n", guideURL, DocsBaseURL, cfg.Challenge, nextStageKey)
-	fmt.Printf("Run %s when ready.\n", yellow("'lc test'"))
+	fmt.Printf("Run %s when ready.\n", yellow("'clstr test'"))
 
 	return nil
 }
@@ -328,7 +328,7 @@ func ShowStatus(ctx context.Context, cmd *commands.Command) error {
 	// Next steps
 	guideURL := fmt.Sprintf("%s/%s/%s", DocsBaseURL, cfg.Challenge, cfg.Stage)
 	fmt.Printf("\nRead the guide: \033]8;;%s\033\\%s/%s/%s\033]8;;\033\\\n\n", guideURL, DocsBaseURL, cfg.Challenge, cfg.Stage)
-	fmt.Printf("Implement %s, then run %s.\n", cfg.Stage, yellow("'lc test'"))
+	fmt.Printf("Implement %s, then run %s.\n", cfg.Stage, yellow("'clstr test'"))
 
 	return nil
 }
@@ -342,7 +342,7 @@ func ListChallenges(ctx context.Context, cmd *commands.Command) error {
 		fmt.Printf("  %-20s - %s (%d stages)\n", key, challenge.Name, challenge.Len())
 	}
 
-	fmt.Printf("\nStart with: lc init <challenge-name>\n")
+	fmt.Printf("\nStart with: clstr init <challenge-name>\n")
 
 	return nil
 }

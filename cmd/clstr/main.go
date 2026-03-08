@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/littleclusters/lc/internal/cli"
+	"github.com/clstr-io/clstr/internal/cli"
 	commands "github.com/urfave/cli/v3"
 )
 
@@ -15,7 +15,7 @@ func main() {
 	log.SetFlags(0)
 
 	cmd := &commands.Command{
-		Name:  "lc",
+		Name:  "clstr",
 		Usage: "Learn distributed systems by building them from scratch",
 		Commands: []*commands.Command{
 			{

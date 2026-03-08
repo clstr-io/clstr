@@ -1,6 +1,6 @@
 package kvstore
 
-import "github.com/littleclusters/lc/internal/registry"
+import "github.com/clstr-io/clstr/internal/registry"
 
 func init() {
 	challenge := &registry.Challenge{

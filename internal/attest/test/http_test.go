@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/littleclusters/lc/internal/attest"
+	. "github.com/clstr-io/clstr/internal/attest"
 )
 
 func TestHTTP(t *testing.T) {

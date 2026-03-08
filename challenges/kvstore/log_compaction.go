@@ -1,7 +1,7 @@
 package kvstore
 
 import (
-	. "github.com/littleclusters/lc/internal/attest"
+	. "github.com/clstr-io/clstr/internal/attest"
 )
 
 func LogCompaction() *Suite {
