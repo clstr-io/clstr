@@ -3,11 +3,9 @@ package attest
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -61,7 +59,6 @@ type Assert interface {
 }
 
 var _ Assert = (*HTTPAssert)(nil)
-var _ Assert = (*CLIAssert)(nil)
 
 // AssertBase provides common assertion functionality.
 type AssertBase struct {
@@ -178,98 +175,6 @@ func (a *HTTPAssert) check() {
 	checkAll(a.responseBody, a.jsonCheckers, func(m Checker[string], actual string) {
 		msg := fmt.Sprintf("%s %s\n  Expected JSON: %s\n  Actual value: %v%s",
 			p.method, p.url, m.Expected(), actual, a.formatHelp())
-		panic(msg)
-	})
-}
-
-// CLIAssert provides CLI command output and exit code assertions.
-type CLIAssert struct {
-	AssertBase
-
-	plan     *CLIPlan
-	output   string
-	exitCode int
-
-	exitCheckers   []Checker[int]
-	outputCheckers []Checker[string]
-}
-
-// ExitCode adds expected exit code checkers.
-// All checkers must pass.
-func (a *CLIAssert) ExitCode(checkers ...Checker[int]) *CLIAssert {
-	a.exitCheckers = append(a.exitCheckers, checkers...)
-	return a
-}
-
-// Output adds expected command output checkers.
-// All checkers must pass.
-func (a *CLIAssert) Output(checkers ...Checker[string]) *CLIAssert {
-	a.outputCheckers = append(a.outputCheckers, checkers...)
-	return a
-}
-
-func (a *CLIAssert) Assert(help string) {
-	a.help = help
-
-	p := a.plan
-	switch p.timing {
-	case TimingEventually:
-		eventually(p.ctx, a.execute, p.timeout, a.config.RetryPollInterval)
-	case TimingConsistently:
-		consistently(p.ctx, a.execute, p.timeout, a.config.RetryPollInterval)
-	default:
-		a.execute()
-	}
-
-	a.check()
-}
-
-func (a *CLIAssert) execute() bool {
-	p := a.plan
-
-	ctx, cancel := context.WithTimeout(p.ctx, a.config.ExecuteTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, p.command, p.args...)
-
-	stdout, err := cmd.Output()
-	if err != nil {
-		var exitError *exec.ExitError
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			a.output = fmt.Sprintf("%s timed out after %s", p.command, a.config.ExecuteTimeout)
-			a.exitCode = -1
-		} else if errors.Is(ctx.Err(), context.Canceled) {
-			a.output = fmt.Sprintf("%s was cancelled", p.command)
-			a.exitCode = -1
-		} else if errors.As(err, &exitError) {
-			a.output = string(exitError.Stderr)
-			a.exitCode = exitError.ExitCode()
-		} else {
-			panic(err.Error())
-		}
-	} else {
-		a.output = string(stdout)
-		a.exitCode = 0
-	}
-
-	return checkAll(a.exitCode, a.exitCheckers, nil) &&
-		checkAll(a.output, a.outputCheckers, nil)
-}
-
-func (a *CLIAssert) check() {
-	p := a.plan
-
-	checkAll(a.exitCode, a.exitCheckers, func(m Checker[int], actual int) {
-		msg := fmt.Sprintf("%s %s\n  Expected exit code: %s\n  Actual exit code: %d%s",
-			p.command, strings.Join(p.args, " "), m.Expected(), actual,
-			a.formatHelp())
-		panic(msg)
-	})
-
-	checkAll(a.output, a.outputCheckers, func(m Checker[string], actual string) {
-		msg := fmt.Sprintf("%s %s\n  Expected output: %s\n  Actual output: %q%s",
-			p.command, strings.Join(p.args, " "), m.Expected(), actual,
-			a.formatHelp())
 		panic(msg)
 	})
 }

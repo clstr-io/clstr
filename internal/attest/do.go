@@ -306,17 +306,3 @@ func (do *Do) HTTP(name, method, path string, args ...any) *HTTPPlan {
 		body:    body,
 	}
 }
-
-// Exec creates a test plan for a CLI command execution.
-func (do *Do) Exec(args ...string) *CLIPlan {
-	return &CLIPlan{
-		PlanBase: PlanBase{
-			timing: TimingImmediate,
-			ctx:    do.ctx,
-			config: do.config,
-		},
-
-		command: do.config.Command,
-		args:    args,
-	}
-}
