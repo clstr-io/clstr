@@ -45,16 +45,16 @@ func (s *Suite) WithConfig(config *Config) *Suite {
 		merged.WorkingDir = config.WorkingDir
 	}
 
-	if config.ProcessStartTimeout != 0 {
-		merged.ProcessStartTimeout = config.ProcessStartTimeout
+	if config.NodeStartTimeout != 0 {
+		merged.NodeStartTimeout = config.NodeStartTimeout
 	}
 
-	if config.ProcessShutdownTimeout != 0 {
-		merged.ProcessShutdownTimeout = config.ProcessShutdownTimeout
+	if config.NodeShutdownTimeout != 0 {
+		merged.NodeShutdownTimeout = config.NodeShutdownTimeout
 	}
 
-	if config.ProcessRestartDelay != 0 {
-		merged.ProcessRestartDelay = config.ProcessRestartDelay
+	if config.NodeRestartDelay != 0 {
+		merged.NodeRestartDelay = config.NodeRestartDelay
 	}
 
 	if config.DefaultRetryTimeout != 0 {
