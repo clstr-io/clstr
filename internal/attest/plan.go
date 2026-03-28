@@ -29,7 +29,6 @@ type Plan[P any, A any] interface {
 }
 
 var _ Plan[*HTTPPlan, *HTTPAssert] = (*HTTPPlan)(nil)
-var _ Plan[*CLIPlan, *CLIAssert] = (*CLIPlan)(nil)
 
 // PlanBase provides common plan functionality.
 type PlanBase struct {
@@ -102,41 +101,6 @@ func (p *HTTPPlan) For(timeout time.Duration) *HTTPPlan {
 
 func (p *HTTPPlan) T() *HTTPAssert {
 	return &HTTPAssert{
-		AssertBase: AssertBase{config: p.config},
-		plan:       p,
-	}
-}
-
-// CLIPlan represents a test plan for a CLI command execution.
-type CLIPlan struct {
-	PlanBase
-
-	command string
-	args    []string
-}
-
-func (p *CLIPlan) Eventually() *CLIPlan {
-	p.setEventually()
-	return p
-}
-
-func (p *CLIPlan) Within(timeout time.Duration) *CLIPlan {
-	p.setWithin(timeout)
-	return p
-}
-
-func (p *CLIPlan) Consistently() *CLIPlan {
-	p.setConsistently()
-	return p
-}
-
-func (p *CLIPlan) For(timeout time.Duration) *CLIPlan {
-	p.setFor(timeout)
-	return p
-}
-
-func (p *CLIPlan) T() *CLIAssert {
-	return &CLIAssert{
 		AssertBase: AssertBase{config: p.config},
 		plan:       p,
 	}
