@@ -8,10 +8,9 @@ func (do *Do) Cancel() {
 	do.cancel()
 }
 
-func (do *Do) MockProcess(name, realPort string) {
-	proc := &Process{}
+func (do *Do) MockNode(name, realPort string) {
+	node := &Node{}
+	node.realPort, _ = strconv.Atoi(realPort)
 
-	proc.realPort, _ = strconv.Atoi(realPort)
-
-	do.processes.Set(name, proc)
+	do.nodes.Set(name, node)
 }

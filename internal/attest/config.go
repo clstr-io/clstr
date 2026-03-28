@@ -10,12 +10,12 @@ type Config struct {
 	// WorkingDir is the base directory for test runs.
 	WorkingDir string
 
-	// ProcessStartTimeout for process startup.
-	ProcessStartTimeout time.Duration
-	// ProcessShutdownTimeout for process shutdown.
-	ProcessShutdownTimeout time.Duration
-	// ProcessRestartDelay between stop and start during restart.
-	ProcessRestartDelay time.Duration
+	// NodeStartTimeout for node startup.
+	NodeStartTimeout time.Duration
+	// NodeShutdownTimeout for node shutdown.
+	NodeShutdownTimeout time.Duration
+	// NodeRestartDelay between stop and start during restart.
+	NodeRestartDelay time.Duration
 
 	// DefaultRetryTimeout for Eventually and Consistently operations.
 	DefaultRetryTimeout time.Duration
@@ -29,13 +29,13 @@ type Config struct {
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		Command:                "./run.sh",
-		WorkingDir:             ".clstr",
-		ProcessStartTimeout:    15 * time.Second,
-		ProcessShutdownTimeout: 15 * time.Second,
-		ProcessRestartDelay:    time.Second,
-		DefaultRetryTimeout:    5 * time.Second,
-		RetryPollInterval:      100 * time.Millisecond,
-		ExecuteTimeout:         15 * time.Second,
+		Command:             "./run.sh",
+		WorkingDir:          ".clstr",
+		NodeStartTimeout:    15 * time.Second,
+		NodeShutdownTimeout: 15 * time.Second,
+		NodeRestartDelay:    time.Second,
+		DefaultRetryTimeout: 5 * time.Second,
+		RetryPollInterval:   100 * time.Millisecond,
+		ExecuteTimeout:      15 * time.Second,
 	}
 }
