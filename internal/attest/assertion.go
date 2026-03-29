@@ -10,6 +10,17 @@ import (
 	"time"
 )
 
+type timing int
+
+const (
+	timingImmediate timing = iota
+	timingEventually
+	timingConsistently
+)
+
+// H is a convenience type for HTTP headers.
+type H map[string]string
+
 // eventually checks that the condition becomes true within the given period.
 func eventually(ctx context.Context, condition func() bool, timeout, pollInterval time.Duration) bool {
 	deadline := time.Now().Add(timeout)
@@ -46,36 +57,20 @@ func consistently(ctx context.Context, condition func() bool, timeout, pollInter
 	return true
 }
 
-// Assert defines the interface for executing and validating test assertions.
-type Assert interface {
-	// Assert executes the test plan and validates the result.
-	Assert(help string)
-	// execute runs the test plan once and returns whether it meets expectations.
-	execute() bool
-	// check validates the result and panics with formatted error message on failure.
-	check()
-	// formatHelp formats help text with proper indentation for error messages.
-	formatHelp() string
-}
+// Assertion represents a pending HTTP request with optional checkers and hint text.
+type Assertion struct {
+	timing  timing
+	timeout time.Duration
+	hint    string
 
-var _ Assert = (*HTTPAssert)(nil)
+	ctx    context.Context
+	config *config
 
-// AssertBase provides common assertion functionality.
-type AssertBase struct {
-	help string
+	method  string
+	url     string
+	headers H
+	body    []byte
 
-	config *Config
-}
-
-func (a *AssertBase) formatHelp() string {
-	return "\n\n  " + strings.ReplaceAll(a.help, "\n", "\n  ")
-}
-
-// HTTPAssert provides assertions for HTTP response validation.
-type HTTPAssert struct {
-	AssertBase
-
-	plan           *HTTPPlan
 	responseBody   string
 	responseStatus int
 
@@ -84,23 +79,43 @@ type HTTPAssert struct {
 	jsonCheckers   []Checker[string]
 }
 
+// Eventually configures the assertion to retry until success or timeout.
+func (a *Assertion) Eventually(timeout ...time.Duration) *Assertion {
+	a.timing = timingEventually
+	a.timeout = a.config.assertTimeout
+	if len(timeout) > 0 {
+		a.timeout = timeout[0]
+	}
+	return a
+}
+
+// Consistently configures the assertion to verify success for the entire duration.
+func (a *Assertion) Consistently(timeout ...time.Duration) *Assertion {
+	a.timing = timingConsistently
+	a.timeout = a.config.assertTimeout
+	if len(timeout) > 0 {
+		a.timeout = timeout[0]
+	}
+	return a
+}
+
 // Status adds expected HTTP response status code checkers.
 // All checkers must pass.
-func (a *HTTPAssert) Status(checkers ...Checker[int]) *HTTPAssert {
+func (a *Assertion) Status(checkers ...Checker[int]) *Assertion {
 	a.statusCheckers = append(a.statusCheckers, checkers...)
 	return a
 }
 
 // Body adds expected HTTP response body checkers.
 // All checkers must pass.
-func (a *HTTPAssert) Body(checkers ...Checker[string]) *HTTPAssert {
+func (a *Assertion) Body(checkers ...Checker[string]) *Assertion {
 	a.bodyCheckers = append(a.bodyCheckers, checkers...)
 	return a
 }
 
 // JSON adds expected checkers for a JSON field at the given gjson path.
 // All checkers must pass.
-func (a *HTTPAssert) JSON(path string, checkers ...Checker[string]) *HTTPAssert {
+func (a *Assertion) JSON(path string, checkers ...Checker[string]) *Assertion {
 	for _, checker := range checkers {
 		a.jsonCheckers = append(a.jsonCheckers, JSON(path, checker))
 	}
@@ -108,32 +123,35 @@ func (a *HTTPAssert) JSON(path string, checkers ...Checker[string]) *HTTPAssert 
 	return a
 }
 
-func (a *HTTPAssert) Assert(help string) {
-	a.help = help
+// Hint sets the help text shown when the assertion fails.
+func (a *Assertion) Hint(help string) *Assertion {
+	a.hint = help
+	return a
+}
 
-	p := a.plan
-	switch p.timing {
-	case TimingEventually:
-		eventually(p.ctx, a.execute, p.timeout, a.config.RetryPollInterval)
-	case TimingConsistently:
-		consistently(p.ctx, a.execute, p.timeout, a.config.RetryPollInterval)
+// Check executes the assertion and panics on failure.
+func (a *Assertion) Check() {
+	switch a.timing {
+	case timingEventually:
+		eventually(a.ctx, a.execute, a.timeout, a.config.pollInterval)
+	case timingConsistently:
+		consistently(a.ctx, a.execute, a.timeout, a.config.pollInterval)
 	default:
 		a.execute()
 	}
 
-	a.check()
+	a.verify()
 }
 
-func (a *HTTPAssert) execute() bool {
-	client := &http.Client{Timeout: a.config.ExecuteTimeout}
-	p := a.plan
+func (a *Assertion) execute() bool {
+	client := &http.Client{Timeout: a.config.requestTimeout}
 
-	req, err := http.NewRequestWithContext(p.ctx, p.method, p.url, bytes.NewReader(p.body))
+	req, err := http.NewRequestWithContext(a.ctx, a.method, a.url, bytes.NewReader(a.body))
 	if err != nil {
 		panic(fmt.Sprintf("An error occurred: %v", err))
 	}
 
-	for key, value := range p.headers {
+	for key, value := range a.headers {
 		req.Header.Set(key, value)
 	}
 
@@ -156,25 +174,27 @@ func (a *HTTPAssert) execute() bool {
 		checkAll(a.responseBody, a.jsonCheckers, nil)
 }
 
-func (a *HTTPAssert) check() {
-	p := a.plan
+func (a *Assertion) verify() {
+	formatHelp := func() string {
+		if a.hint == "" {
+			return ""
+		}
+
+		return "\n\n  " + strings.ReplaceAll(a.hint, "\n", "\n  ")
+	}
 
 	checkAll(a.responseStatus, a.statusCheckers, func(m Checker[int], actual int) {
-		msg := fmt.Sprintf("%s %s\n  Expected status: %s\n  Actual status: %d %s%s",
-			p.method, p.url, m.Expected(), actual,
-			http.StatusText(actual), a.formatHelp())
-		panic(msg)
+		panic(fmt.Sprintf("%s %s\n  Expected status: %s\n  Actual status: %d %s%s",
+			a.method, a.url, m.Expected(), actual, http.StatusText(actual), formatHelp()))
 	})
 
 	checkAll(a.responseBody, a.bodyCheckers, func(m Checker[string], actual string) {
-		msg := fmt.Sprintf("%s %s\n  Expected response: %s\n  Actual response: %q%s",
-			p.method, p.url, m.Expected(), actual, a.formatHelp())
-		panic(msg)
+		panic(fmt.Sprintf("%s %s\n  Expected response: %s\n  Actual response: %q%s",
+			a.method, a.url, m.Expected(), actual, formatHelp()))
 	})
 
 	checkAll(a.responseBody, a.jsonCheckers, func(m Checker[string], actual string) {
-		msg := fmt.Sprintf("%s %s\n  Expected JSON: %s\n  Actual value: %v%s",
-			p.method, p.url, m.Expected(), actual, a.formatHelp())
-		panic(msg)
+		panic(fmt.Sprintf("%s %s\n  Expected JSON: %s\n  Actual value: %v%s",
+			a.method, a.url, m.Expected(), actual, formatHelp()))
 	})
 }

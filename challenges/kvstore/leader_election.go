@@ -25,17 +25,9 @@ package kvstore
 //   8. Healing After Partition
 
 import (
-	"fmt"
-
 	. "github.com/clstr-io/clstr/internal/attest"
 )
 
 func LeaderElection() *Suite {
-	return New().
-		// 0
-		Setup(func(do *Do) {
-			for i := range 5 {
-				do.Start(fmt.Sprintf("node-%d", i+1))
-			}
-		})
+	return New()
 }

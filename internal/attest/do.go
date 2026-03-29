@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -18,7 +19,7 @@ import (
 // Do provides the test harness and acts as the test runner.
 type Do struct {
 	nodes      *threadsafe.Map[string, *Node]
-	config     *Config
+	config     *config
 	workingDir string
 
 	ctx    context.Context
@@ -26,13 +27,11 @@ type Do struct {
 }
 
 // newDo creates a new Do instance with custom configuration.
-func newDo(ctx context.Context, config *Config) *Do {
+func newDo(ctx context.Context, config *config) *Do {
 	doCtx, cancel := context.WithCancel(ctx)
 
-	// Build working directory path with timestamp
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	workingDir := filepath.Join(config.WorkingDir, fmt.Sprintf("run-%s", timestamp))
-
+	workingDir := filepath.Join(config.workingDir, timestamp)
 	err := os.MkdirAll(workingDir, 0755)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create working directory: %v", err))
@@ -51,53 +50,56 @@ func newDo(ctx context.Context, config *Config) *Do {
 type Node struct {
 	cmd     *exec.Cmd
 	args    []string
+	port    int
 	logFile *os.File
-
-	realPort int
-	fauxPort int
 }
 
-// getNode retrieves a node by name or panics if not found.
-func (do *Do) getNode(name string) *Node {
-	if node, exists := do.nodes.Get(name); exists {
-		return node
+func (n *Node) closeLog() {
+	if n.logFile != nil {
+		n.logFile.Close()
+		n.logFile = nil
+	}
+}
+
+func (do *Do) startCluster(names ...string) {
+	ports := make(map[string]int, len(names))
+	for _, name := range names {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			panic(fmt.Sprintf("failed to assign port for %q: %v", name, err))
+		}
+
+		ports[name] = l.Addr().(*net.TCPAddr).Port
+		l.Close()
 	}
 
-	panic(fmt.Sprintf("node %q not found", name))
+	for _, name := range names {
+		peers := make([]string, 0, len(names)-1)
+		for _, other := range names {
+			if other != name {
+				peers = append(peers, fmt.Sprintf(":%d", ports[other]))
+			}
+		}
+		peersArg := fmt.Sprintf("--peers=%s", strings.Join(peers, ","))
+
+		do.startNode(name, ports[name], peersArg)
+	}
 }
 
-// Start starts the node with an OS-assigned port.
-func (do *Do) Start(name string, args ...string) {
-	do.startWithPort(name, 0, args...)
-}
-
-// startWithPort starts the node on the specified port.
-func (do *Do) startWithPort(name string, port int, args ...string) {
+func (do *Do) startNode(name string, port int, args ...string) {
 	select {
 	case <-do.ctx.Done():
 		return
 	default:
 	}
 
-	// Get OS-assigned port
-	if port == 0 {
-		listener, err := net.Listen("tcp", ":0")
-		if err != nil {
-			panic(fmt.Sprintf("Failed to get OS-assigned port: %v", err))
-		}
-		port = listener.Addr().(*net.TCPAddr).Port
-		listener.Close()
-	}
-
-	// Start the node
 	portArg := fmt.Sprintf("--port=%d", port)
 	workingDirArg := fmt.Sprintf("--working-dir=%s", do.workingDir)
 	newArgs := append([]string{portArg, workingDirArg}, args...)
 
-	cmd := exec.CommandContext(do.ctx, do.config.Command, newArgs...)
+	cmd := exec.CommandContext(do.ctx, do.config.command, newArgs...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	// Redirect stdout/stderr to log file
 	logPath := filepath.Join(do.workingDir, fmt.Sprintf("%s.log", name))
 	logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -112,15 +114,14 @@ func (do *Do) startWithPort(name string, port int, args ...string) {
 		panic(err.Error())
 	}
 
-	node := &Node{realPort: port, cmd: cmd, args: args, logFile: logFile}
+	node := &Node{cmd: cmd, args: args, port: port, logFile: logFile}
 	do.waitForPort(node)
-
 	do.nodes.Set(name, node)
 }
 
 // waitForPort waits for a node to accept connections on its port.
 func (do *Do) waitForPort(node *Node) {
-	host := fmt.Sprintf("127.0.0.1:%d", node.realPort)
+	host := fmt.Sprintf("127.0.0.1:%d", node.port)
 
 	succeeded := eventually(do.ctx, func() bool {
 		conn, err := net.DialTimeout("tcp", host, 100*time.Millisecond)
@@ -130,7 +131,7 @@ func (do *Do) waitForPort(node *Node) {
 
 		conn.Close()
 		return true
-	}, do.config.NodeStartTimeout, do.config.RetryPollInterval)
+	}, do.config.nodeStartTimeout, do.config.pollInterval)
 
 	if !succeeded {
 		select {
@@ -143,72 +144,77 @@ func (do *Do) waitForPort(node *Node) {
 					"- run.sh script not executable (run: chmod +x run.sh)\n"+
 					"- Node not starting on port %d\n"+
 					"- Node crashing during startup\n\n"+
-					"Debug with: ./run.sh and check for error messages", host, node.realPort,
+					"Debug with: ./run.sh and check for error messages", host, node.port,
 			)
 		}
 	}
 }
 
+// getNode retrieves a node by name or panics if not found.
+func (do *Do) getNode(name string) *Node {
+	if node, exists := do.nodes.Get(name); exists {
+		return node
+	}
+
+	panic(fmt.Sprintf("node %q not found", name))
+}
+
+// Start starts a previously stopped or killed node on its original port.
+func (do *Do) Start(name string) {
+	node := do.getNode(name)
+	do.startNode(name, node.port, node.args...)
+}
+
 // Stop sends SIGTERM to the node, then SIGKILL after timeout.
 func (do *Do) Stop(name string) {
-	n := do.getNode(name)
-	if n.cmd == nil || n.cmd.Process == nil {
+	node := do.getNode(name)
+	if node.cmd == nil || node.cmd.Process == nil {
 		return
 	}
 
-	pgid := n.cmd.Process.Pid
+	pgid := node.cmd.Process.Pid
 	err := syscall.Kill(-pgid, syscall.SIGTERM)
 	if err != nil {
-		fmt.Println(red("Error stopping node running @"), red(n.realPort))
+		fmt.Println(red("Error stopping node running @"), red(node.port))
 		return
 	}
 
-	// Wait for graceful exit, force kill if timeout
 	done := make(chan bool, 1)
 	go func() {
-		n.cmd.Wait()
+		node.cmd.Wait()
 		done <- true
 	}()
 
 	select {
 	case <-done:
-		// Node exited gracefully
-	case <-time.After(do.config.NodeShutdownTimeout):
+	case <-time.After(do.config.nodeShutdownTimeout):
 		do.Kill(name)
 		<-done
 	}
 
-	// Close log file after node exits
-	if n.logFile != nil {
-		n.logFile.Close()
-		n.logFile = nil
-	}
+	node.closeLog()
 }
 
 // Kill sends SIGKILL to kill the node immediately.
 func (do *Do) Kill(name string) {
-	n := do.getNode(name)
-	if n.cmd == nil || n.cmd.Process == nil {
+	node := do.getNode(name)
+	if node.cmd == nil || node.cmd.Process == nil {
 		return
 	}
 
-	pgid := n.cmd.Process.Pid
+	pgid := node.cmd.Process.Pid
 	err := syscall.Kill(-pgid, syscall.SIGKILL)
 	if err != nil {
-		fmt.Println(red("Error killing node running @"), red(n.realPort))
+		fmt.Println(red("Error killing node running @"), red(node.port))
 	}
 
-	// Close log file if not already closed (e.g., when called directly, not via Stop)
-	if n.logFile != nil {
-		n.logFile.Close()
-		n.logFile = nil
-	}
+	node.closeLog()
 }
 
 // Restart stops the node and starts it again.
 func (do *Do) Restart(name string, sig ...syscall.Signal) {
-	n := do.getNode(name)
-	if n.cmd == nil {
+	node := do.getNode(name)
+	if node.cmd == nil {
 		return
 	}
 
@@ -218,32 +224,13 @@ func (do *Do) Restart(name string, sig ...syscall.Signal) {
 	}
 
 	switch signal {
-	case syscall.SIGTERM:
-		do.Stop(name)
 	case syscall.SIGKILL:
 		do.Kill(name)
 	default:
 		do.Stop(name)
 	}
 
-	time.Sleep(do.config.NodeRestartDelay)
-
-	do.startWithPort(name, n.realPort, n.args...)
-}
-
-// Done cleans up all running nodes.
-func (do *Do) Done() {
-	do.cancel()
-
-	var nodes []string
-	do.nodes.Range(func(node string, _ *Node) bool {
-		nodes = append(nodes, node)
-		return true
-	})
-
-	for _, node := range nodes {
-		do.Stop(node)
-	}
+	do.Start(name)
 }
 
 // Concurrently runs fn n times in parallel, passing each invocation a 1-based index.
@@ -278,35 +265,20 @@ func (do *Do) Concurrently(n int, fn func(i int)) {
 	}
 }
 
-// GET creates a test plan for an HTTP GET request.
-func (do *Do) GET(node, path string, args ...any) *HTTPPlan {
-	return do.httpRequest(node, "GET", path, args...)
+// Done cleans up all running nodes.
+func (do *Do) Done() {
+	do.cancel()
+
+	do.nodes.Range(func(name string, _ *Node) bool {
+		do.Stop(name)
+		return true
+	})
 }
 
-// POST creates a test plan for an HTTP POST request.
-func (do *Do) POST(node, path string, args ...any) *HTTPPlan {
-	return do.httpRequest(node, "POST", path, args...)
-}
-
-// PUT creates a test plan for an HTTP PUT request.
-func (do *Do) PUT(node, path string, args ...any) *HTTPPlan {
-	return do.httpRequest(node, "PUT", path, args...)
-}
-
-// DELETE creates a test plan for an HTTP DELETE request.
-func (do *Do) DELETE(node, path string, args ...any) *HTTPPlan {
-	return do.httpRequest(node, "DELETE", path, args...)
-}
-
-// PATCH creates a test plan for an HTTP PATCH request.
-func (do *Do) PATCH(node, path string, args ...any) *HTTPPlan {
-	return do.httpRequest(node, "PATCH", path, args...)
-}
-
-// httpRequest creates a test plan for an HTTP request with the given method.
-func (do *Do) httpRequest(node, method, path string, args ...any) *HTTPPlan {
-	n := do.getNode(node)
-	url := fmt.Sprintf("http://127.0.0.1:%d%s", n.realPort, path)
+// http creates an assertion for an HTTP request with the given method.
+func (do *Do) http(nodeName, method, path string, args ...any) *Assertion {
+	node := do.getNode(nodeName)
+	url := fmt.Sprintf("http://127.0.0.1:%d%s", node.port, path)
 
 	var body []byte
 	if len(args) >= 1 {
@@ -318,16 +290,38 @@ func (do *Do) httpRequest(node, method, path string, args ...any) *HTTPPlan {
 		headers = args[1].(H)
 	}
 
-	return &HTTPPlan{
-		PlanBase: PlanBase{
-			timing: TimingImmediate,
-			ctx:    do.ctx,
-			config: do.config,
-		},
-
+	return &Assertion{
+		timing:  timingImmediate,
+		ctx:     do.ctx,
+		config:  do.config,
 		method:  method,
 		url:     url,
 		headers: headers,
 		body:    body,
 	}
+}
+
+// GET creates an assertion for an HTTP GET request.
+func (do *Do) GET(node, path string, args ...any) *Assertion {
+	return do.http(node, "GET", path, args...)
+}
+
+// POST creates an assertion for an HTTP POST request.
+func (do *Do) POST(node, path string, args ...any) *Assertion {
+	return do.http(node, "POST", path, args...)
+}
+
+// PUT creates an assertion for an HTTP PUT request.
+func (do *Do) PUT(node, path string, args ...any) *Assertion {
+	return do.http(node, "PUT", path, args...)
+}
+
+// DELETE creates an assertion for an HTTP DELETE request.
+func (do *Do) DELETE(node, path string, args ...any) *Assertion {
+	return do.http(node, "DELETE", path, args...)
+}
+
+// PATCH creates an assertion for an HTTP PATCH request.
+func (do *Do) PATCH(node, path string, args ...any) *Assertion {
+	return do.http(node, "PATCH", path, args...)
 }
