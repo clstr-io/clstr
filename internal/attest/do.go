@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,7 @@ type Do struct {
 	nodes      *threadsafe.Map[string, *Node]
 	config     *config
 	workingDir string
+	client     *http.Client
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -41,8 +43,14 @@ func newDo(ctx context.Context, config *config) *Do {
 		nodes:      threadsafe.NewMap[string, *Node](),
 		config:     config,
 		workingDir: workingDir,
-		ctx:        doCtx,
-		cancel:     cancel,
+		client: &http.Client{
+			Transport: &http.Transport{
+				MaxIdleConnsPerHost: 100,
+				MaxConnsPerHost:     200,
+			},
+		},
+		ctx:    doCtx,
+		cancel: cancel,
 	}
 }
 
@@ -294,6 +302,7 @@ func (do *Do) http(nodeName, method, path string, args ...any) *Assertion {
 		timing:  timingImmediate,
 		ctx:     do.ctx,
 		config:  do.config,
+		client:  do.client,
 		method:  method,
 		url:     url,
 		headers: headers,

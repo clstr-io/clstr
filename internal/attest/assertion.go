@@ -65,6 +65,7 @@ type Assertion struct {
 
 	ctx    context.Context
 	config *config
+	client *http.Client
 
 	method  string
 	url     string
@@ -148,9 +149,10 @@ func (a *Assertion) Check() {
 }
 
 func (a *Assertion) execute() bool {
-	client := &http.Client{Timeout: a.config.requestTimeout}
+	ctx, cancel := context.WithTimeout(a.ctx, a.config.requestTimeout)
+	defer cancel()
 
-	req, err := http.NewRequestWithContext(a.ctx, a.method, a.url, bytes.NewReader(a.body))
+	req, err := http.NewRequestWithContext(ctx, a.method, a.url, bytes.NewReader(a.body))
 	if err != nil {
 		panic(fmt.Sprintf("An error occurred: %v", err))
 	}
@@ -159,7 +161,7 @@ func (a *Assertion) execute() bool {
 		req.Header.Set(key, value)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := a.client.Do(req)
 	if err != nil {
 		panic(fmt.Sprintf("An error occurred: %v", err))
 	}
