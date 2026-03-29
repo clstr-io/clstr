@@ -19,7 +19,7 @@ var (
 type Suite struct {
 	setupFn func(*Do)
 	tests   []TestFunc
-	config  *Config
+	config  *config
 }
 
 // TestFunc represents a single test case with name and function.
@@ -28,48 +28,20 @@ type TestFunc struct {
 	Fn   func(*Do)
 }
 
-// New creates a new empty test suite.
-func New() *Suite {
-	return &Suite{tests: make([]TestFunc, 0)}
+// New creates a new test suite with optional configuration.
+func New(opts ...Option) *Suite {
+	cfg := defaultConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return &Suite{tests: make([]TestFunc, 0), config: cfg}
 }
 
-// WithConfig sets the configuration for the test suite.
-func (s *Suite) WithConfig(config *Config) *Suite {
-	merged := DefaultConfig()
-
-	if config.Command != "" {
-		merged.Command = config.Command
+// With applies options to the suite configuration.
+func (s *Suite) With(opts ...Option) *Suite {
+	for _, opt := range opts {
+		opt(s.config)
 	}
-
-	if config.WorkingDir != "" {
-		merged.WorkingDir = config.WorkingDir
-	}
-
-	if config.NodeStartTimeout != 0 {
-		merged.NodeStartTimeout = config.NodeStartTimeout
-	}
-
-	if config.NodeShutdownTimeout != 0 {
-		merged.NodeShutdownTimeout = config.NodeShutdownTimeout
-	}
-
-	if config.NodeRestartDelay != 0 {
-		merged.NodeRestartDelay = config.NodeRestartDelay
-	}
-
-	if config.DefaultRetryTimeout != 0 {
-		merged.DefaultRetryTimeout = config.DefaultRetryTimeout
-	}
-
-	if config.RetryPollInterval != 0 {
-		merged.RetryPollInterval = config.RetryPollInterval
-	}
-
-	if config.ExecuteTimeout != 0 {
-		merged.ExecuteTimeout = config.ExecuteTimeout
-	}
-
-	s.config = merged
 	return s
 }
 
@@ -87,17 +59,23 @@ func (s *Suite) Test(name string, fn func(*Do)) *Suite {
 
 // Run executes the test suite and returns results.
 func (s *Suite) Run(ctx context.Context) bool {
-	config := s.config
-	if config == nil {
-		config = DefaultConfig()
-	}
-
-	do := newDo(ctx, config)
+	do := newDo(ctx, s.config)
 	defer do.Done()
 
-	// Run setup function if defined
 	var failed bool
-	if s.setupFn != nil {
+	if len(s.config.nodes) > 0 {
+		func() {
+			defer func() {
+				if err := recover(); err != nil {
+					failed = true
+					fmt.Printf("%s %s\n\n%s\n", crossMark, "CLUSTER STARTUP", err)
+				}
+			}()
+			do.startCluster(s.config.nodes...)
+		}()
+	}
+
+	if !failed && s.setupFn != nil {
 		func() {
 			defer func() {
 				err := recover()

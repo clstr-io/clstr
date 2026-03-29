@@ -16,7 +16,7 @@ func TestHTTP(t *testing.T) {
 	tests := []struct {
 		name       string
 		handler    http.HandlerFunc
-		config     *Config
+		opts       []Option
 		testFunc   func(*Do)
 		cancel     func(*Do)
 		shouldPass bool
@@ -40,22 +40,26 @@ func TestHTTP(t *testing.T) {
 				}
 			},
 			testFunc: func(do *Do) {
-				do.PUT("svc", "/kv/kenya:capital", "Nairobi").T().
+				do.PUT("svc", "/kv/kenya:capital", "Nairobi").
 					Status(Is(200)).
-					Assert("Server should handle PUT requests properly")
+					Hint("Server should handle PUT requests properly").
+					Check()
 
-				do.GET("svc", "/kv/kenya:capital").T().
+				do.GET("svc", "/kv/kenya:capital").
 					Status(Is(200)).
 					Body(Is("Nairobi")).
-					Assert("Server should handle GET requests properly")
+					Hint("Server should handle GET requests properly").
+					Check()
 
-				do.PATCH("svc", "/kv/kenya:capital").T().
+				do.PATCH("svc", "/kv/kenya:capital").
 					Status(Is(405)).
-					Assert("Server should return 405 for unsupported methods")
+					Hint("Server should return 405 for unsupported methods").
+					Check()
 
-				do.GET("svc", "/unknown").T().
+				do.GET("svc", "/unknown").
 					Status(Is(404)).
-					Assert("Server should return 404 for non-existent endpoints")
+					Hint("Server should return 404 for non-existent endpoints").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -65,9 +69,10 @@ func TestHTTP(t *testing.T) {
 				w.WriteHeader(http.StatusNotFound)
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
-					Assert("Should fail when expecting 200 OK but server returns 404")
+					Hint("Should fail when expecting 200 OK but server returns 404").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -77,10 +82,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("Mombasa"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(Is("Nairobi")).
-					Assert("Should fail when expecting 'Nairobi' but server returns 'Mombasa'")
+					Hint("Should fail when expecting 'Nairobi' but server returns 'Mombasa'").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -92,12 +98,13 @@ func TestHTTP(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("Done"))
 			},
-			config: &Config{ExecuteTimeout: 50 * time.Millisecond},
+			opts: []Option{WithRequestTimeout(50 * time.Millisecond)},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(Is("Done")).
-					Assert("Should fail when request times out before server responds")
+					Hint("Should fail when request times out before server responds").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -117,10 +124,11 @@ func TestHTTP(t *testing.T) {
 			}(),
 			testFunc: func(do *Do) {
 				do.GET("svc", "/").
-					Eventually().T().
+					Eventually().
 					Status(Is(200)).
 					Body(Is("Ready")).
-					Assert("Service should eventually become ready")
+					Hint("Service should eventually become ready").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -132,10 +140,11 @@ func TestHTTP(t *testing.T) {
 			},
 			testFunc: func(do *Do) {
 				do.GET("svc", "/").
-					Eventually().Within(500 * time.Millisecond).T().
+					Eventually(500 * time.Millisecond).
 					Status(Is(200)).
 					Body(Is("Ready")).
-					Assert("Should fail when service never becomes ready within timeout")
+					Hint("Should fail when service never becomes ready within timeout").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -147,10 +156,11 @@ func TestHTTP(t *testing.T) {
 			},
 			testFunc: func(do *Do) {
 				do.GET("svc", "/").
-					Eventually().Within(time.Second).T().
+					Eventually(time.Second).
 					Status(Is(200)).
 					Body(Is("Ready")).
-					Assert("Should fail when operation is cancelled before completion")
+					Hint("Should fail when operation is cancelled before completion").
+					Check()
 			},
 			cancel: func(do *Do) {
 				go func() {
@@ -168,10 +178,11 @@ func TestHTTP(t *testing.T) {
 			},
 			testFunc: func(do *Do) {
 				do.GET("svc", "/").
-					Consistently().For(500 * time.Millisecond).T().
+					Consistently(500 * time.Millisecond).
 					Status(Is(200)).
 					Body(Is("Stable")).
-					Assert("Service should remain consistently available")
+					Hint("Service should remain consistently available").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -190,10 +201,11 @@ func TestHTTP(t *testing.T) {
 			}(),
 			testFunc: func(do *Do) {
 				do.GET("svc", "/").
-					Consistently().T().
+					Consistently().
 					Status(Is(200)).
 					Body(Is("Stable")).
-					Assert("Should fail when service returns intermittent errors")
+					Hint("Should fail when service returns intermittent errors").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -205,10 +217,11 @@ func TestHTTP(t *testing.T) {
 			},
 			testFunc: func(do *Do) {
 				do.GET("svc", "/").
-					Consistently().For(3 * time.Second).T().
+					Consistently(3 * time.Second).
 					Status(Is(200)).
 					Body(Is("Stable")).
-					Assert("Should pass when cancelled during consistency check")
+					Hint("Should pass when cancelled during consistency check").
+					Check()
 			},
 			cancel: func(do *Do) {
 				go func() {
@@ -225,10 +238,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("Error: file not found"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(Contains("file not found")).
-					Assert("Should accept response containing the substring")
+					Hint("Should accept response containing the substring").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -239,10 +253,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("Success"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(Contains("error")).
-					Assert("Should fail when substring is not in response")
+					Hint("Should fail when substring is not in response").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -253,10 +268,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("User ID: 12345"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(Matches(`User ID: \d+`)).
-					Assert("Should match regex pattern")
+					Hint("Should match regex pattern").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -267,10 +283,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("User ID: abc"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(Matches(`User ID: \d+`)).
-					Assert("Should fail when pattern doesn't match")
+					Hint("Should fail when pattern doesn't match").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -281,10 +298,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("Hello"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(HasLen[string](5)).
-					Assert("Should pass when body length matches")
+					Hint("Should pass when body length matches").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -295,10 +313,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("Hello World"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(HasLen[string](5)).
-					Assert("Should fail when body length doesn't match")
+					Hint("Should fail when body length doesn't match").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -309,10 +328,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte(`{"items":["a","b","c"]}`))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					JSON("items", HasLen[string](3)).
-					Assert("Should pass when JSON array length matches")
+					Hint("Should pass when JSON array length matches").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -323,10 +343,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte(`{"items":["a","b","c","d","e"]}`))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					JSON("items", HasLen[string](3)).
-					Assert("Should fail when JSON array length doesn't match")
+					Hint("Should fail when JSON array length doesn't match").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -337,10 +358,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte(`{"name":"Alice"}`))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					JSON("name", HasLen[string](5)).
-					Assert("Should pass when JSON string field length matches")
+					Hint("Should pass when JSON string field length matches").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -351,10 +373,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte(`{"items":[]}`))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					JSON("items", HasLen[string](0)).
-					Assert("Should pass when JSON array is empty and length is 0")
+					Hint("Should pass when JSON array is empty and length is 0").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -365,10 +388,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("value2"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(OneOf("value1", "value2", "value3")).
-					Assert("Should accept value2 as one of the valid options")
+					Hint("Should accept value2 as one of the valid options").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -379,10 +403,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("invalid"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(OneOf("value1", "value2", "value3")).
-					Assert("Should fail when response is not in the list of valid values")
+					Hint("Should fail when response is not in the list of valid values").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -393,10 +418,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("Success"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(Not(Contains("error"))).
-					Assert("Should pass when negated checker doesn't match")
+					Hint("Should pass when negated checker doesn't match").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -407,10 +433,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("Error occurred"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(Not(Contains("Error"))).
-					Assert("Should fail when negated checker matches")
+					Hint("Should fail when negated checker matches").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -421,12 +448,13 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte(`{"role":"follower","leader":null,"term":1}`))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/cluster/info").T().
+				do.GET("svc", "/cluster/info").
 					Status(Is(200)).
 					JSON("role", Is("follower")).
 					JSON("leader", IsNull[string]()).
 					JSON("term", Is("1")).
-					Assert("Should match JSON fields")
+					Hint("Should match JSON fields").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -437,11 +465,12 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte(`{"entries":[{"term":1,"index":0},{"term":2,"index":1}]}`))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/log").T().
+				do.GET("svc", "/log").
 					Status(Is(200)).
 					JSON("entries.0.term", Is("1")).
 					JSON("entries.1.index", Is("1")).
-					Assert("Should match nested JSON fields")
+					Hint("Should match nested JSON fields").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -452,10 +481,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte(`{"role":"candidate","term":2}`))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/cluster/info").T().
+				do.GET("svc", "/cluster/info").
 					Status(Is(200)).
 					JSON("role", Is("leader")).
-					Assert("Should fail when JSON field doesn't match")
+					Hint("Should fail when JSON field doesn't match").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -466,10 +496,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte(`{"role":"follower","leader":":8001"}`))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/cluster/info").T().
+				do.GET("svc", "/cluster/info").
 					Status(Is(200)).
 					JSON("leader", IsNull[string]()).
-					Assert("Should fail when expecting null but value is not null")
+					Hint("Should fail when expecting null but value is not null").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -479,9 +510,10 @@ func TestHTTP(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200), Not(Is(404)), Not(Is(500))).
-					Assert("Should pass when all status checkers pass")
+					Hint("Should pass when all status checkers pass").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -492,10 +524,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("Hello World"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(Contains("Hello"), Contains("World"), Not(Contains("Goodbye"))).
-					Assert("Should pass when all body checkers pass")
+					Hint("Should pass when all body checkers pass").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -506,10 +539,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte(`{"role":"leader"}`))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/cluster/info").T().
+				do.GET("svc", "/cluster/info").
 					Status(Is(200)).
 					JSON("role", Is("leader"), Not(Is("follower")), Not(Is("candidate"))).
-					Assert("Should pass when all checkers for the same JSON field pass")
+					Hint("Should pass when all checkers for the same JSON field pass").
+					Check()
 			},
 			shouldPass: true,
 		},
@@ -520,10 +554,11 @@ func TestHTTP(t *testing.T) {
 				w.Write([]byte("Hello World"))
 			},
 			testFunc: func(do *Do) {
-				do.GET("svc", "/").T().
+				do.GET("svc", "/").
 					Status(Is(200)).
 					Body(Contains("Hello"), Contains("Goodbye")).
-					Assert("Should fail when one of the checkers fails")
+					Hint("Should fail when one of the checkers fails").
+					Check()
 			},
 			shouldPass: false,
 		},
@@ -534,18 +569,12 @@ func TestHTTP(t *testing.T) {
 			server := httptest.NewServer(tt.handler)
 			defer server.Close()
 
-			port := strings.Split(server.URL, ":")[2]
-
-			if tt.config == nil {
-				tt.config = &Config{}
-			}
-			tt.config.WorkingDir = t.TempDir()
-
-			suite := New().WithConfig(tt.config)
+			suite := New(append(tt.opts, WithWorkingDir(t.TempDir()))...)
 
 			success := suite.
 				Setup(func(do *Do) {
-					do.MockNode("svc", port)
+					do.MockNode("svc", strings.Split(server.URL, ":")[2])
+
 					if tt.cancel != nil {
 						tt.cancel(do)
 					}

@@ -8,9 +8,9 @@ func (do *Do) Cancel() {
 	do.cancel()
 }
 
-func (do *Do) MockNode(name, realPort string) {
+func (do *Do) MockNode(name, port string) {
 	node := &Node{}
-	node.realPort, _ = strconv.Atoi(realPort)
+	node.port, _ = strconv.Atoi(port)
 
 	do.nodes.Set(name, node)
 }

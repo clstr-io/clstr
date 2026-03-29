@@ -5,9 +5,5 @@ import (
 )
 
 func MembershipChanges() *Suite {
-	return New().
-		// 0
-		Setup(func(do *Do) {
-
-		})
+	return New()
 }

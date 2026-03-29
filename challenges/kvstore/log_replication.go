@@ -5,9 +5,5 @@ import (
 )
 
 func LogReplication() *Suite {
-	return New().
-		// 0
-		Setup(func(do *Do) {
-
-		})
+	return New()
 }
