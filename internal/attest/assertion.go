@@ -57,7 +57,7 @@ func consistently(ctx context.Context, condition func() bool, timeout, pollInter
 	return true
 }
 
-// Assertion represents a pending HTTP request with optional checkers and hint text.
+// Assertion describes an HTTP request and the conditions its response must satisfy.
 type Assertion struct {
 	timing  timing
 	timeout time.Duration
@@ -82,20 +82,24 @@ type Assertion struct {
 // Eventually configures the assertion to retry until success or timeout.
 func (a *Assertion) Eventually(timeout ...time.Duration) *Assertion {
 	a.timing = timingEventually
+
 	a.timeout = a.config.assertTimeout
 	if len(timeout) > 0 {
 		a.timeout = timeout[0]
 	}
+
 	return a
 }
 
 // Consistently configures the assertion to verify success for the entire duration.
 func (a *Assertion) Consistently(timeout ...time.Duration) *Assertion {
 	a.timing = timingConsistently
+
 	a.timeout = a.config.assertTimeout
 	if len(timeout) > 0 {
 		a.timeout = timeout[0]
 	}
+
 	return a
 }
 
