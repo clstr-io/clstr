@@ -3,13 +3,7 @@ package attest
 import (
 	"context"
 	"fmt"
-	"log"
-	"net"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -17,32 +11,34 @@ import (
 	"github.com/clstr-io/clstr/pkg/threadsafe"
 )
 
+// Node is the interface satisfied by containerNode and mockNode.
+type Node interface {
+	ContainerIP() string
+	MappedPort() int
+
+	Start(ctx context.Context) error
+	Stop(ctx context.Context, timeout time.Duration) error
+	Kill(ctx context.Context) error
+	Exec(ctx context.Context, args ...string) error
+}
+
 // Do provides the test harness and acts as the test runner.
 type Do struct {
-	nodes      *threadsafe.Map[string, *Node]
-	config     *config
-	workingDir string
-	client     *http.Client
+	nodes  *threadsafe.Map[string, Node]
+	config *config
+	client *http.Client
 
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
-// newDo creates a new Do instance with custom configuration.
-func newDo(ctx context.Context, config *config) *Do {
+// newDo creates a new Do instance with the given configuration.
+func newDo(ctx context.Context, cfg *config) *Do {
 	doCtx, cancel := context.WithCancel(ctx)
 
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	workingDir := filepath.Join(config.workingDir, timestamp)
-	err := os.MkdirAll(workingDir, 0755)
-	if err != nil {
-		panic(fmt.Sprintf("failed to create working directory: %v", err))
-	}
-
 	return &Do{
-		nodes:      threadsafe.NewMap[string, *Node](),
-		config:     config,
-		workingDir: workingDir,
+		nodes:  threadsafe.NewMap[string, Node](),
+		config: cfg,
 		client: &http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 100,
@@ -54,178 +50,135 @@ func newDo(ctx context.Context, config *config) *Do {
 	}
 }
 
-// Node represents a running node.
-type Node struct {
-	cmd     *exec.Cmd
-	args    []string
-	port    int
-	logFile *os.File
-}
-
-func (n *Node) closeLog() {
-	if n.logFile != nil {
-		n.logFile.Close()
-		n.logFile = nil
-	}
-}
-
 func (do *Do) startCluster(names ...string) {
-	ports := make(map[string]int, len(names))
-	for _, name := range names {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			panic(fmt.Sprintf("failed to assign port for %q: %v", name, err))
-		}
+	err := checkDockerDaemon(do.ctx)
+	if err != nil {
+		panic(err.Error())
+	}
 
-		ports[name] = l.Addr().(*net.TCPAddr).Port
-		l.Close()
+	resetDockerEnv(do.ctx, names)
+
+	err = buildDockerImage(do.ctx)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	err = createDockerNetwork(do.ctx)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	ips := make(map[string]string, len(names))
+	for i, name := range names {
+		ips[name] = fmt.Sprintf("10.0.42.%d", i+2)
 	}
 
 	for _, name := range names {
 		peers := make([]string, 0, len(names)-1)
 		for _, other := range names {
 			if other != name {
-				peers = append(peers, fmt.Sprintf(":%d", ports[other]))
+				peers = append(peers, fmt.Sprintf("%s:%d", ips[other], containerPort))
 			}
 		}
-		peersArg := fmt.Sprintf("--peers=%s", strings.Join(peers, ","))
 
-		do.startNode(name, ports[name], peersArg)
-	}
-}
-
-func (do *Do) startNode(name string, port int, args ...string) {
-	select {
-	case <-do.ctx.Done():
-		return
-	default:
-	}
-
-	portArg := fmt.Sprintf("--port=%d", port)
-	workingDirArg := fmt.Sprintf("--working-dir=%s", do.workingDir)
-	newArgs := append([]string{portArg, workingDirArg}, args...)
-
-	cmd := exec.CommandContext(do.ctx, do.config.command, newArgs...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-	logPath := filepath.Join(do.workingDir, fmt.Sprintf("%s.log", name))
-	logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		panic(fmt.Sprintf("failed to create log file: %v", err))
-	}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-
-	err = cmd.Start()
-	if err != nil {
-		logFile.Close()
-		panic(err.Error())
-	}
-
-	node := &Node{cmd: cmd, args: args, port: port, logFile: logFile}
-	do.waitForPort(node)
-	do.nodes.Set(name, node)
-}
-
-// waitForPort waits for a node to accept connections on its port.
-func (do *Do) waitForPort(node *Node) {
-	host := fmt.Sprintf("127.0.0.1:%d", node.port)
-
-	succeeded := eventually(do.ctx, func() bool {
-		conn, err := net.DialTimeout("tcp", host, 100*time.Millisecond)
+		mappedPort, err := freePort()
 		if err != nil {
-			return false
+			panic(fmt.Sprintf("assign port for %q: %v", name, err))
 		}
 
-		conn.Close()
-		return true
-	}, do.config.nodeStartTimeout, do.config.pollInterval)
-
-	if !succeeded {
-		select {
-		case <-do.ctx.Done():
-			return
-		default:
-			log.Fatalf(
-				"\nCould not connect to http://%s.\n\n"+
-					"Possible issues:\n"+
-					"- run.sh script not executable (run: chmod +x run.sh)\n"+
-					"- Node not starting on port %d\n"+
-					"- Node crashing during startup\n\n"+
-					"Debug with: ./run.sh and check for error messages", host, node.port,
-			)
+		containerName := "clstr-" + name
+		node := &containerNode{
+			name:       containerName,
+			ip:         ips[name],
+			mappedPort: mappedPort,
+			peers:      peers,
 		}
+
+		do.nodes.Set(name, node)
+	}
+
+	var wg sync.WaitGroup
+	var panicErr any
+	var panicMu sync.Mutex
+	for _, name := range names {
+		wg.Add(1)
+		go func(name string) {
+			defer wg.Done()
+			defer func() {
+				err := recover()
+				if err != nil {
+					panicMu.Lock()
+					if panicErr == nil {
+						panicErr = err
+					}
+					panicMu.Unlock()
+				}
+			}()
+			do.Start(name)
+		}(name)
+	}
+
+	wg.Wait()
+
+	if panicErr != nil {
+		panic(panicErr)
 	}
 }
 
 // getNode retrieves a node by name or panics if not found.
-func (do *Do) getNode(name string) *Node {
-	if node, exists := do.nodes.Get(name); exists {
+func (do *Do) getNode(name string) Node {
+	node, exists := do.nodes.Get(name)
+	if exists {
 		return node
 	}
 
 	panic(fmt.Sprintf("node %q not found", name))
 }
 
-// Start starts a previously stopped or killed node on its original port.
+// Start starts a previously stopped or killed node.
 func (do *Do) Start(name string) {
 	node := do.getNode(name)
-	do.startNode(name, node.port, node.args...)
-}
-
-// Stop sends SIGTERM to the node, then SIGKILL after timeout.
-func (do *Do) Stop(name string) {
-	node := do.getNode(name)
-	if node.cmd == nil || node.cmd.Process == nil {
-		return
-	}
-
-	pgid := node.cmd.Process.Pid
-	err := syscall.Kill(-pgid, syscall.SIGTERM)
-	if err != nil {
-		fmt.Println(red("Error stopping node running @"), red(node.port))
-		return
-	}
-
-	done := make(chan bool, 1)
-	go func() {
-		node.cmd.Wait()
-		done <- true
-	}()
 
 	select {
-	case <-done:
-	case <-time.After(do.config.nodeShutdownTimeout):
-		do.Kill(name)
-		<-done
+	case <-do.ctx.Done():
+		return
+	default:
 	}
 
-	node.closeLog()
+	err := node.Start(do.ctx)
+	if err != nil {
+		panic(fmt.Sprintf("start %q: %v", name, err))
+	}
+
+	err = waitForMappedPort(do.ctx, name, node, do.config.nodeStartTimeout, do.config.pollInterval)
+	if err != nil {
+		panic(err.Error())
+	}
 }
 
-// Kill sends SIGKILL to kill the node immediately.
+// Stop sends SIGTERM to the node, then SIGKILL after the shutdown timeout.
+func (do *Do) Stop(name string) {
+	node := do.getNode(name)
+
+	err := node.Stop(do.ctx, do.config.nodeShutdownTimeout)
+	if err != nil {
+		fmt.Println(red("Error stopping"), red(name))
+	}
+}
+
+// Kill sends SIGKILL to the node immediately.
 func (do *Do) Kill(name string) {
 	node := do.getNode(name)
-	if node.cmd == nil || node.cmd.Process == nil {
-		return
-	}
 
-	pgid := node.cmd.Process.Pid
-	err := syscall.Kill(-pgid, syscall.SIGKILL)
+	err := node.Kill(do.ctx)
 	if err != nil {
-		fmt.Println(red("Error killing node running @"), red(node.port))
+		fmt.Println(red("Error killing"), red(name))
 	}
-
-	node.closeLog()
 }
 
 // Restart stops the node and starts it again.
+// Pass syscall.SIGKILL to crash immediately instead of graceful shutdown.
 func (do *Do) Restart(name string, sig ...syscall.Signal) {
-	node := do.getNode(name)
-	if node.cmd == nil {
-		return
-	}
-
 	signal := syscall.SIGTERM
 	if len(sig) > 0 {
 		signal = sig[0]
@@ -239,6 +192,43 @@ func (do *Do) Restart(name string, sig ...syscall.Signal) {
 	}
 
 	do.Start(name)
+}
+
+// Partition installs iptables DROP rules so nodes in different groups cannot
+// reach each other. Rules are bidirectional. Call Heal to restore connectivity.
+func (do *Do) Partition(groups ...[]string) {
+	for i, g1 := range groups {
+		for j, g2 := range groups {
+			if i >= j {
+				continue
+			}
+
+			for _, a := range g1 {
+				for _, b := range g2 {
+					nA := do.getNode(a)
+					nB := do.getNode(b)
+					ipA, ipB := nA.ContainerIP(), nB.ContainerIP()
+
+					mustExecOnNode(do.ctx, nA, "iptables", "-A", "INPUT", "-s", ipB, "-j", "DROP")
+					mustExecOnNode(do.ctx, nA, "iptables", "-A", "OUTPUT", "-d", ipB, "-j", "DROP")
+					mustExecOnNode(do.ctx, nB, "iptables", "-A", "INPUT", "-s", ipA, "-j", "DROP")
+					mustExecOnNode(do.ctx, nB, "iptables", "-A", "OUTPUT", "-d", ipA, "-j", "DROP")
+				}
+			}
+		}
+	}
+}
+
+// Heal flushes all iptables rules on every node, restoring full connectivity.
+func (do *Do) Heal() {
+	do.nodes.Range(func(name string, node Node) bool {
+		err := node.Exec(do.ctx, "iptables", "-F")
+		if err != nil {
+			fmt.Println(red("Error healing"), red(name), ":", err)
+		}
+
+		return true
+	})
 }
 
 // Concurrently runs fn n times in parallel, passing each invocation a 1-based index.
@@ -273,20 +263,23 @@ func (do *Do) Concurrently(n int, fn func(i int)) {
 	}
 }
 
-// Done cleans up all running nodes.
+// Done cancels the test context and stops all nodes. Containers are left in place
+// so they can be inspected after a failure; they will be cleaned up at the start
+// of the next run.
 func (do *Do) Done() {
 	do.cancel()
 
-	do.nodes.Range(func(name string, _ *Node) bool {
-		do.Stop(name)
+	bg := context.Background()
+	do.nodes.Range(func(_ string, node Node) bool {
+		node.Stop(bg, do.config.nodeShutdownTimeout)
 		return true
 	})
 }
 
-// http creates an assertion for an HTTP request with the given method.
+// http creates an assertion for an HTTP request to the named node.
 func (do *Do) http(nodeName, method, path string, args ...any) *Assertion {
 	node := do.getNode(nodeName)
-	url := fmt.Sprintf("http://127.0.0.1:%d%s", node.port, path)
+	url := fmt.Sprintf("http://127.0.0.1:%d%s", node.MappedPort(), path)
 
 	var body []byte
 	if len(args) >= 1 {
@@ -311,26 +304,26 @@ func (do *Do) http(nodeName, method, path string, args ...any) *Assertion {
 }
 
 // GET creates an assertion for an HTTP GET request.
-func (do *Do) GET(node, path string, args ...any) *Assertion {
-	return do.http(node, "GET", path, args...)
+func (do *Do) GET(name, path string, args ...any) *Assertion {
+	return do.http(name, "GET", path, args...)
 }
 
 // POST creates an assertion for an HTTP POST request.
-func (do *Do) POST(node, path string, args ...any) *Assertion {
-	return do.http(node, "POST", path, args...)
+func (do *Do) POST(name, path string, args ...any) *Assertion {
+	return do.http(name, "POST", path, args...)
 }
 
 // PUT creates an assertion for an HTTP PUT request.
-func (do *Do) PUT(node, path string, args ...any) *Assertion {
-	return do.http(node, "PUT", path, args...)
+func (do *Do) PUT(name, path string, args ...any) *Assertion {
+	return do.http(name, "PUT", path, args...)
 }
 
 // DELETE creates an assertion for an HTTP DELETE request.
-func (do *Do) DELETE(node, path string, args ...any) *Assertion {
-	return do.http(node, "DELETE", path, args...)
+func (do *Do) DELETE(name, path string, args ...any) *Assertion {
+	return do.http(name, "DELETE", path, args...)
 }
 
 // PATCH creates an assertion for an HTTP PATCH request.
-func (do *Do) PATCH(node, path string, args ...any) *Assertion {
-	return do.http(node, "PATCH", path, args...)
+func (do *Do) PATCH(name, path string, args ...any) *Assertion {
+	return do.http(name, "PATCH", path, args...)
 }

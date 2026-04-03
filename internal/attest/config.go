@@ -6,8 +6,6 @@ import (
 )
 
 type config struct {
-	command             string
-	workingDir          string
 	nodes               []string
 	nodeStartTimeout    time.Duration
 	nodeShutdownTimeout time.Duration
@@ -18,8 +16,6 @@ type config struct {
 
 func defaultConfig() *config {
 	return &config{
-		command:             "./run.sh",
-		workingDir:          ".clstr",
 		nodeStartTimeout:    10 * time.Second,
 		nodeShutdownTimeout: 5 * time.Second,
 		assertTimeout:       5 * time.Second,
@@ -30,16 +26,6 @@ func defaultConfig() *config {
 
 // Option configures a Suite.
 type Option func(*config)
-
-// WithCommand sets the script or binary used to start each node.
-func WithCommand(cmd string) Option {
-	return func(c *config) { c.command = cmd }
-}
-
-// WithWorkingDir sets the base directory for test run artifacts and node data.
-func WithWorkingDir(dir string) Option {
-	return func(c *config) { c.workingDir = dir }
-}
 
 // WithCluster declares N nodes named n1, n2, ... nN.
 func WithCluster(n int) Option {
