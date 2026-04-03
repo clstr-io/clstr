@@ -19,7 +19,7 @@ $ brew tap clstr-io/tap
 $ brew install clstr-io/tap/clstr
 ```
 
-See [docs.clstr.io](https://docs.clstr.io/guides/cli/#installation) for version pinning and other installation methods.
+See [clstr.io](https://clstr.io/guides/cli/#installation) for version pinning and other installation methods.
 
 Start a challenge:
 

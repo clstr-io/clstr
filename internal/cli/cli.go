@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	DocsBaseURL = "https://docs.clstr.io"
+	DocsBaseURL = "https://clstr.io"
 )
 
 var (
@@ -51,17 +51,15 @@ func createChallengeFiles(challenge *registry.Challenge, targetPath, lang string
 	}
 
 	// Dockerfile
-	if lang != "" {
-		dockerfile, err := images.Dockerfile(lang)
-		if err != nil {
-			return fmt.Errorf("Failed to load Dockerfile template: %w", err)
-		}
+	dockerfile, err := images.Dockerfile(lang)
+	if err != nil {
+		return fmt.Errorf("Failed to load Dockerfile template: %w", err)
+	}
 
-		dockerfilePath := filepath.Join(targetPath, "Dockerfile")
-		err = os.WriteFile(dockerfilePath, dockerfile, 0644)
-		if err != nil {
-			return fmt.Errorf("Failed to create Dockerfile: %w", err)
-		}
+	dockerfilePath := filepath.Join(targetPath, "Dockerfile")
+	err = os.WriteFile(dockerfilePath, dockerfile, 0644)
+	if err != nil {
+		return fmt.Errorf("Failed to create Dockerfile: %w", err)
 	}
 
 	return nil

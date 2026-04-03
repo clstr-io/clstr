@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	DocsBaseURL = "https://docs.clstr.io"
+	DocsBaseURL = "https://clstr.io"
 )
 
 func init() {
@@ -89,14 +89,14 @@ func (c *Challenge) README() string {
 ## Getting Started
 
 1. Read the requirements for the current stage (linked above)
-2. Edit `+"`run.sh`"+` to start your implementation
+2. Update the `+"`Dockerfile`"+` if required
 3. Run `+"`clstr test`"+` to verify your implementation
 4. Run `+"`clstr next`"+` to advance when tests pass
 
 ## Resources
 
 - [Challenge Overview](%s/%s/)
-- [How clstr Works](%s/how-clstr-works/)
+- [How clstr Works](%s/how-it-works/)
 - [CLI Guide](%s/guides/cli/)
 - [CI/CD Setup](%s/guides/ci-cd/)
 
