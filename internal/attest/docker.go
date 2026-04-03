@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os/exec"
 	"strings"
 	"time"
@@ -143,17 +144,17 @@ func (n *containerNode) Exec(ctx context.Context, args ...string) error {
 	return nil
 }
 
-func waitForMappedPort(ctx context.Context, name string, node Node, timeout, pollInterval time.Duration) error {
-	host := fmt.Sprintf("127.0.0.1:%d", node.MappedPort())
+func waitUntilNodeReady(ctx context.Context, name string, node Node, timeout, pollInterval time.Duration) error {
+	url := fmt.Sprintf("http://127.0.0.1:%d/health", node.MappedPort())
 
 	succeeded := eventually(ctx, func() bool {
-		conn, err := net.DialTimeout("tcp", host, 100*time.Millisecond)
+		resp, err := http.Get(url)
 		if err != nil {
 			return false
 		}
 
-		conn.Close()
-		return true
+		resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
 	}, timeout, pollInterval)
 
 	if !succeeded {
@@ -162,8 +163,8 @@ func waitForMappedPort(ctx context.Context, name string, node Node, timeout, pol
 			return nil
 		default:
 			msg := fmt.Sprintf(
-				"node %q did not accept connections on %s within %s",
-				name, host, timeout,
+				"node %q did not become ready at %s within %s",
+				name, url, timeout,
 			)
 			logs, _ := exec.CommandContext(context.Background(), "docker", "logs", "clstr-"+name).CombinedOutput()
 
