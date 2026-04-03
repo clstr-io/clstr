@@ -23,7 +23,14 @@ func main() {
 				Aliases:   []string{"i"},
 				Usage:     "Initialize a challenge",
 				ArgsUsage: "<challenge> [path]",
-				Action:    cli.InitChallenge,
+				Flags: []commands.Flag{
+					&commands.StringFlag{
+						Name:    "language",
+						Aliases: []string{"lang", "l"},
+						Usage:   "Generate a Dockerfile for the specified language (e.g. go, python, rust)",
+					},
+				},
+				Action: cli.InitChallenge,
 			},
 			{
 				Name:      "test",

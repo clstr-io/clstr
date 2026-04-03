@@ -6,7 +6,7 @@ on:
       - "v*"
 
 jobs:
-  bump-tap:
+  update-homebrew-tap:
     runs-on: ubuntu-latest
     steps:
       - name: Update homebrew tap

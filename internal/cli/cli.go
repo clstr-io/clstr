@@ -6,10 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/fatih/color"
 	_ "github.com/clstr-io/clstr/challenges"
+	"github.com/clstr-io/clstr/images"
 	"github.com/clstr-io/clstr/internal/registry"
 	"github.com/clstr-io/clstr/internal/state"
+	"github.com/fatih/color"
 	commands "github.com/urfave/cli/v3"
 )
 
@@ -22,7 +23,7 @@ var (
 )
 
 // createChallengeFiles creates the initial project files for a new challenge.
-func createChallengeFiles(challenge *registry.Challenge, targetPath string) error {
+func createChallengeFiles(challenge *registry.Challenge, targetPath, lang string) error {
 	// README.md
 	readmePath := filepath.Join(targetPath, "README.md")
 	err := os.WriteFile(readmePath, []byte(challenge.README()), 0644)
@@ -47,6 +48,20 @@ func createChallengeFiles(challenge *registry.Challenge, targetPath string) erro
 	err = os.WriteFile(gitignorePath, []byte(gitignoreContent), 0644)
 	if err != nil {
 		return fmt.Errorf("Failed to create .gitignore: %w", err)
+	}
+
+	// Dockerfile
+	if lang != "" {
+		dockerfile, err := images.Dockerfile(lang)
+		if err != nil {
+			return fmt.Errorf("Failed to load Dockerfile template: %w", err)
+		}
+
+		dockerfilePath := filepath.Join(targetPath, "Dockerfile")
+		err = os.WriteFile(dockerfilePath, dockerfile, 0644)
+		if err != nil {
+			return fmt.Errorf("Failed to create Dockerfile: %w", err)
+		}
 	}
 
 	return nil
@@ -78,7 +93,8 @@ func InitChallenge(ctx context.Context, cmd *commands.Command) error {
 		targetPath = "."
 	}
 
-	err = createChallengeFiles(challenge, targetPath)
+	lang := cmd.String("language")
+	err = createChallengeFiles(challenge, targetPath, lang)
 	if err != nil {
 		return err
 	}
@@ -91,7 +107,9 @@ func InitChallenge(ctx context.Context, cmd *commands.Command) error {
 
 	fmt.Println("  README.md      - Challenge overview and requirements")
 	fmt.Println("  clstr.state    - Tracks your progress")
-	fmt.Printf("  .gitignore     - Ignores .clstr/ working directory (server files and logs)\n\n")
+	fmt.Println("  .gitignore     - Ignores .clstr/ working directory (server files and logs)")
+	fmt.Println("  Dockerfile      - Build and run your server in a container")
+	fmt.Println()
 
 	firstStageKey := challenge.StageOrder[0]
 	if targetPath == "." {
