@@ -150,7 +150,7 @@ func (do *Do) Start(name string) {
 		panic(fmt.Sprintf("start %q: %v", name, err))
 	}
 
-	err = waitForMappedPort(do.ctx, name, node, do.config.nodeStartTimeout, do.config.pollInterval)
+	err = waitUntilNodeReady(do.ctx, name, node, do.config.nodeStartTimeout, do.config.pollInterval)
 	if err != nil {
 		panic(err.Error())
 	}
