@@ -23,30 +23,9 @@ var (
 
 // createChallengeFiles creates the initial project files for a new challenge.
 func createChallengeFiles(challenge *registry.Challenge, targetPath string) error {
-	// run.sh
-	scriptPath := filepath.Join(targetPath, "run.sh")
-	scriptTemplate := `#!/bin/bash -e
-
-# This script builds and runs your implementation.
-# clstr will execute this script to start your program.
-# "$@" passes command-line arguments from clstr to your program, e.g.:
-#   --working-dir=<path>: Directory where your program should write files
-
-echo "Replace this line with the command that runs your implementation."
-# Examples:
-#   exec go run ./cmd/server "$@"
-#   exec python main.py "$@"
-#   exec ./my-program "$@"
-`
-
-	err := os.WriteFile(scriptPath, []byte(scriptTemplate), 0755)
-	if err != nil {
-		return fmt.Errorf("Failed to create run.sh: %w", err)
-	}
-
 	// README.md
 	readmePath := filepath.Join(targetPath, "README.md")
-	err = os.WriteFile(readmePath, []byte(challenge.README()), 0644)
+	err := os.WriteFile(readmePath, []byte(challenge.README()), 0644)
 	if err != nil {
 		return fmt.Errorf("Failed to create README.md: %w", err)
 	}
@@ -110,7 +89,6 @@ func InitChallenge(ctx context.Context, cmd *commands.Command) error {
 		fmt.Printf("Created challenge in directory: ./%s\n", targetPath)
 	}
 
-	fmt.Println("  run.sh         - Builds and runs your implementation")
 	fmt.Println("  README.md      - Challenge overview and requirements")
 	fmt.Println("  clstr.state    - Tracks your progress")
 	fmt.Printf("  .gitignore     - Ignores .clstr/ working directory (server files and logs)\n\n")
@@ -125,12 +103,8 @@ func InitChallenge(ctx context.Context, cmd *commands.Command) error {
 	return nil
 }
 
-// validateEnvironment checks if run.sh exists and loads the state.
+// validateEnvironment loads the challenge state from the current directory.
 func validateEnvironment() (*state.State, error) {
-	if _, err := os.Stat("run.sh"); os.IsNotExist(err) {
-		return nil, fmt.Errorf("run.sh not found\nCreate an executable run.sh script that starts your implementation.")
-	}
-
 	cfg, err := state.Load()
 	if err != nil {
 		return nil, err

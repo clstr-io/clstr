@@ -569,7 +569,7 @@ func TestHTTP(t *testing.T) {
 			server := httptest.NewServer(tt.handler)
 			defer server.Close()
 
-			suite := New(append(tt.opts, WithWorkingDir(t.TempDir()))...)
+			suite := New(tt.opts...)
 
 			success := suite.
 				Setup(func(do *Do) {
