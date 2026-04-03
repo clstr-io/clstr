@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  bump-tap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update homebrew tap
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          gh api repos/clstr-io/homebrew-tap/contents/Formula/clstr.rb \
+            --jq '.sha' > /tmp/sha.txt
+
+          content=$(gh api repos/clstr-io/homebrew-tap/contents/Formula/clstr.rb \
+            --jq '.content' | base64 -d)
+
+          updated=$(echo "$content" | sed "s/tag: \"v[^\"]*\"/tag: \"$TAG\"/")
+
+          gh api repos/clstr-io/homebrew-tap/contents/Formula/clstr.rb \
+            --method PUT \
+            --field message="chore: bump clstr to $TAG" \
+            --field content="$(echo "$updated" | base64)" \
+            --field sha="$(cat /tmp/sha.txt)"
