@@ -6,7 +6,7 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock .
 RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release
 
 COPY src ./src
