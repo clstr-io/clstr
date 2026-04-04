@@ -19,6 +19,10 @@ func (n *mockNode) MappedPort() int {
 	return n.port
 }
 
+func (n *mockNode) IsAlive() bool {
+	return true
+}
+
 func (n *mockNode) Start(_ context.Context) error {
 	return nil
 }

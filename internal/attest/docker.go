@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -78,6 +79,7 @@ type containerNode struct {
 	ip         string
 	mappedPort int
 	peers      []string
+	alive      atomic.Bool
 }
 
 func (n *containerNode) ContainerIP() string {
@@ -86,6 +88,10 @@ func (n *containerNode) ContainerIP() string {
 
 func (n *containerNode) MappedPort() int {
 	return n.mappedPort
+}
+
+func (n *containerNode) IsAlive() bool {
+	return n.alive.Load()
 }
 
 func (n *containerNode) Start(ctx context.Context) error {
@@ -109,6 +115,8 @@ func (n *containerNode) Start(ctx context.Context) error {
 		return fmt.Errorf("docker run: %w\n%s", err, out)
 	}
 
+	n.alive.Store(true)
+
 	return nil
 }
 
@@ -120,6 +128,8 @@ func (n *containerNode) Stop(ctx context.Context, timeout time.Duration) error {
 		return fmt.Errorf("docker stop: %w\n%s", err, out)
 	}
 
+	n.alive.Store(false)
+
 	return nil
 }
 
@@ -130,6 +140,8 @@ func (n *containerNode) Kill(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("docker kill: %w\n%s", err, out)
 	}
+
+	n.alive.Store(false)
 
 	return nil
 }
@@ -144,7 +156,7 @@ func (n *containerNode) Exec(ctx context.Context, args ...string) error {
 	return nil
 }
 
-func waitUntilNodeReady(ctx context.Context, name string, node Node, timeout, pollInterval time.Duration) error {
+func waitUntilNodeReady(ctx context.Context, name string, node clusterNode, timeout, pollInterval time.Duration) error {
 	url := fmt.Sprintf("http://127.0.0.1:%d/health", node.MappedPort())
 
 	succeeded := eventually(ctx, func() bool {
@@ -175,7 +187,7 @@ func waitUntilNodeReady(ctx context.Context, name string, node Node, timeout, po
 	return nil
 }
 
-func mustExecOnNode(ctx context.Context, node Node, args ...string) {
+func execOnNode(ctx context.Context, node clusterNode, args ...string) {
 	err := node.Exec(ctx, args...)
 	if err != nil {
 		panic(fmt.Sprintf("exec failed: %v", err))
@@ -189,5 +201,6 @@ func freePort() (int, error) {
 	}
 
 	defer l.Close()
+
 	return l.Addr().(*net.TCPAddr).Port, nil
 }

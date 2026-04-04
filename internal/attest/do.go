@@ -5,26 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"syscall"
-	"time"
 
 	"github.com/clstr-io/clstr/pkg/threadsafe"
 )
 
-// Node is the interface satisfied by containerNode and mockNode.
-type Node interface {
-	ContainerIP() string
-	MappedPort() int
-
-	Start(ctx context.Context) error
-	Stop(ctx context.Context, timeout time.Duration) error
-	Kill(ctx context.Context) error
-	Exec(ctx context.Context, args ...string) error
-}
-
 // Do provides the test harness and acts as the test runner.
 type Do struct {
-	nodes  *threadsafe.Map[string, Node]
+	nodes  *threadsafe.Map[string, clusterNode]
 	config *config
 	client *http.Client
 
@@ -37,12 +24,15 @@ func newDo(ctx context.Context, cfg *config) *Do {
 	doCtx, cancel := context.WithCancel(ctx)
 
 	return &Do{
-		nodes:  threadsafe.NewMap[string, Node](),
+		nodes:  threadsafe.NewMap[string, clusterNode](),
 		config: cfg,
 		client: &http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 100,
 				MaxConnsPerHost:     200,
+			},
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
 			},
 		},
 		ctx:    doCtx,
@@ -125,112 +115,6 @@ func (do *Do) startCluster(names ...string) {
 	}
 }
 
-// getNode retrieves a node by name or panics if not found.
-func (do *Do) getNode(name string) Node {
-	node, exists := do.nodes.Get(name)
-	if exists {
-		return node
-	}
-
-	panic(fmt.Sprintf("node %q not found", name))
-}
-
-// Start starts a previously stopped or killed node.
-func (do *Do) Start(name string) {
-	node := do.getNode(name)
-
-	select {
-	case <-do.ctx.Done():
-		return
-	default:
-	}
-
-	err := node.Start(do.ctx)
-	if err != nil {
-		panic(fmt.Sprintf("start %q: %v", name, err))
-	}
-
-	err = waitUntilNodeReady(do.ctx, name, node, do.config.nodeStartTimeout, do.config.pollInterval)
-	if err != nil {
-		panic(err.Error())
-	}
-}
-
-// Stop sends SIGTERM to the node, then SIGKILL after the shutdown timeout.
-func (do *Do) Stop(name string) {
-	node := do.getNode(name)
-
-	err := node.Stop(do.ctx, do.config.nodeShutdownTimeout)
-	if err != nil {
-		fmt.Println(red("Error stopping"), red(name))
-	}
-}
-
-// Kill sends SIGKILL to the node immediately.
-func (do *Do) Kill(name string) {
-	node := do.getNode(name)
-
-	err := node.Kill(do.ctx)
-	if err != nil {
-		fmt.Println(red("Error killing"), red(name))
-	}
-}
-
-// Restart stops the node and starts it again.
-// Pass syscall.SIGKILL to crash immediately instead of graceful shutdown.
-func (do *Do) Restart(name string, sig ...syscall.Signal) {
-	signal := syscall.SIGTERM
-	if len(sig) > 0 {
-		signal = sig[0]
-	}
-
-	switch signal {
-	case syscall.SIGKILL:
-		do.Kill(name)
-	default:
-		do.Stop(name)
-	}
-
-	do.Start(name)
-}
-
-// Partition installs iptables DROP rules so nodes in different groups cannot
-// reach each other. Rules are bidirectional. Call Heal to restore connectivity.
-func (do *Do) Partition(groups ...[]string) {
-	for i, g1 := range groups {
-		for j, g2 := range groups {
-			if i >= j {
-				continue
-			}
-
-			for _, a := range g1 {
-				for _, b := range g2 {
-					nA := do.getNode(a)
-					nB := do.getNode(b)
-					ipA, ipB := nA.ContainerIP(), nB.ContainerIP()
-
-					mustExecOnNode(do.ctx, nA, "iptables", "-A", "INPUT", "-s", ipB, "-j", "DROP")
-					mustExecOnNode(do.ctx, nA, "iptables", "-A", "OUTPUT", "-d", ipB, "-j", "DROP")
-					mustExecOnNode(do.ctx, nB, "iptables", "-A", "INPUT", "-s", ipA, "-j", "DROP")
-					mustExecOnNode(do.ctx, nB, "iptables", "-A", "OUTPUT", "-d", ipA, "-j", "DROP")
-				}
-			}
-		}
-	}
-}
-
-// Heal flushes all iptables rules on every node, restoring full connectivity.
-func (do *Do) Heal() {
-	do.nodes.Range(func(name string, node Node) bool {
-		err := node.Exec(do.ctx, "iptables", "-F")
-		if err != nil {
-			fmt.Println(red("Error healing"), red(name), ":", err)
-		}
-
-		return true
-	})
-}
-
 // Concurrently runs fn n times in parallel, passing each invocation a 1-based index.
 func (do *Do) Concurrently(n int, fn func(i int)) {
 	var wg sync.WaitGroup
@@ -270,17 +154,14 @@ func (do *Do) Done() {
 	do.cancel()
 
 	bg := context.Background()
-	do.nodes.Range(func(_ string, node Node) bool {
+	do.nodes.Range(func(_ string, node clusterNode) bool {
 		node.Stop(bg, do.config.nodeShutdownTimeout)
 		return true
 	})
 }
 
-// http creates an assertion for an HTTP request to the named node.
-func (do *Do) http(nodeName, method, path string, args ...any) *Assertion {
-	node := do.getNode(nodeName)
-	url := fmt.Sprintf("http://127.0.0.1:%d%s", node.MappedPort(), path)
-
+// http creates an assertion for an HTTP request to the node(s) described by sel.
+func (do *Do) http(sel NodeSelector, method, path string, args ...any) *Assertion {
 	var body []byte
 	if len(args) >= 1 {
 		body = []byte(args[0].(string))
@@ -291,39 +172,58 @@ func (do *Do) http(nodeName, method, path string, args ...any) *Assertion {
 		headers = args[1].(H)
 	}
 
-	return &Assertion{
-		timing:  timingImmediate,
-		ctx:     do.ctx,
-		config:  do.config,
-		client:  do.client,
-		method:  method,
-		url:     url,
-		headers: headers,
-		body:    body,
+	a := &Assertion{
+		timing:   timingImmediate,
+		ctx:      do.ctx,
+		config:   do.config,
+		client:   do.client,
+		method:   method,
+		headers:  headers,
+		body:     body,
+		selector: sel,
 	}
+
+	if sel.kind == nodeNamed {
+		node := do.getNode(sel.names[0])
+		a.urls = []string{fmt.Sprintf("http://127.0.0.1:%d%s", node.MappedPort(), path)}
+	} else {
+		names := sel.names
+		if len(names) == 0 {
+			names = do.Nodes()
+		}
+
+		for _, name := range names {
+			node := do.getNode(name)
+			if node.IsAlive() {
+				a.urls = append(a.urls, fmt.Sprintf("http://127.0.0.1:%d%s", node.MappedPort(), path))
+			}
+		}
+	}
+
+	return a
 }
 
 // GET creates an assertion for an HTTP GET request.
-func (do *Do) GET(name, path string, args ...any) *Assertion {
-	return do.http(name, "GET", path, args...)
+func (do *Do) GET(sel NodeSelector, path string, args ...any) *Assertion {
+	return do.http(sel, "GET", path, args...)
 }
 
 // POST creates an assertion for an HTTP POST request.
-func (do *Do) POST(name, path string, args ...any) *Assertion {
-	return do.http(name, "POST", path, args...)
+func (do *Do) POST(sel NodeSelector, path string, args ...any) *Assertion {
+	return do.http(sel, "POST", path, args...)
 }
 
 // PUT creates an assertion for an HTTP PUT request.
-func (do *Do) PUT(name, path string, args ...any) *Assertion {
-	return do.http(name, "PUT", path, args...)
+func (do *Do) PUT(sel NodeSelector, path string, args ...any) *Assertion {
+	return do.http(sel, "PUT", path, args...)
 }
 
 // DELETE creates an assertion for an HTTP DELETE request.
-func (do *Do) DELETE(name, path string, args ...any) *Assertion {
-	return do.http(name, "DELETE", path, args...)
+func (do *Do) DELETE(sel NodeSelector, path string, args ...any) *Assertion {
+	return do.http(sel, "DELETE", path, args...)
 }
 
 // PATCH creates an assertion for an HTTP PATCH request.
-func (do *Do) PATCH(name, path string, args ...any) *Assertion {
-	return do.http(name, "PATCH", path, args...)
+func (do *Do) PATCH(sel NodeSelector, path string, args ...any) *Assertion {
+	return do.http(sel, "PATCH", path, args...)
 }

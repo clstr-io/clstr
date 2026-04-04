@@ -1,33 +1,207 @@
 package kvstore
 
-// Notes:
-//
-// Timing:
-//   - Election timeout: 500-1,000ms (randomized)
-//   - Heartbeat interval: 100ms
-//   - Elections complete within 2s under normal conditions
-//   - Wait ≥2s to verify "no leader elected" scenarios
-//
-// Observability (black-box testing via APIs):
-//   - GET /cluster/info: role, term, leader, votedFor
-//   - GET/PUT/DELETE /kv/*: 307 redirect to leader, 503 if no leader
-//   - POST /cluster/partition: isolate nodes (persists across restarts)
-//   - POST /cluster/heal: restore connectivity
-//
-// Scenarios:
-//   1. Leader Election Completes
-//   2. Exactly One Leader Per Term
-//   3. Leader Maintains Authority via Heartbeats
-//   4. Follower Redirects Clients to Leader
-//   5. State Survives Crashes
-//   6. Minority Partition Cannot Elect Leader
-//   7. Majority Partition Elects Leader
-//   8. Healing After Partition
-
 import (
+	"fmt"
+	"time"
+
 	. "github.com/clstr-io/clstr/internal/attest"
 )
 
+// electionTimeout is the upper bound of the randomized election timeout.
+const electionTimeout = 1_000 * time.Millisecond
+
+// heartbeatInterval is how often the leader sends AppendEntries heartbeats.
+const heartbeatInterval = 100 * time.Millisecond
+
+// findLeader returns the name of the first node currently reporting role=leader.
+func findLeader(do *Do) string {
+	for _, node := range do.Nodes() {
+		r := do.Fetch(node, "/cluster/info")
+		if r != nil && r.JSON("role") == "leader" {
+			return node
+		}
+	}
+
+	return ""
+}
+
+// findFollower returns the name of the first node currently reporting role=follower.
+func findFollower(do *Do) string {
+	for _, node := range do.Nodes() {
+		r := do.Fetch(node, "/cluster/info")
+		if r != nil && r.JSON("role") == "follower" {
+			return node
+		}
+	}
+
+	return ""
+}
+
 func LeaderElection() *Suite {
-	return New()
+	return New(
+		WithCluster(5),
+		WithAssertTimeout(3*time.Second),
+	).
+
+		// 1
+		Test("Leader Election Completes", func(do *Do) {
+			do.GET(do.AtLeastOneNode(), "/cluster/info").
+				Eventually(2*time.Second).
+				Status(Is(200)).
+				JSON("role", Is("leader")).
+				Hint("No leader elected after 2 seconds.\n" +
+					"Implement RequestVote RPC - candidates must request votes from all peers.\n" +
+					"A candidate becomes leader once it receives votes from a majority (3 of 5).").
+				Check()
+		}).
+
+		// 2
+		Test("Exactly One Leader Per Term", func(do *Do) {
+			do.GET(do.ExactlyOneNode(), "/cluster/info").
+				Consistently(2*time.Second).
+				Status(Is(200)).
+				JSON("role", Is("leader")).
+				Hint("More than one node reported role=leader simultaneously.\n" +
+					"Each node must grant at most one vote per term.\n" +
+					"A candidate must step down if it discovers a higher term.").
+				Check()
+		}).
+
+		// 3
+		Test("Terms Increment After Leader Crash", func(do *Do) {
+			prevLeaderNode := findLeader(do)
+			if prevLeaderNode == "" {
+				panic("no leader found")
+			}
+
+			initialTerm := do.Fetch(prevLeaderNode, "/cluster/info").JSON("term")
+			do.Kill(prevLeaderNode)
+
+			do.GET(do.ExactlyOneNode(), "/cluster/info").
+				Eventually(2*time.Second).
+				Status(Is(200)).
+				JSON("role", Is("leader")).
+				Hint("After killing the leader, a new leader should be elected.\n" +
+					"Ensure followers start an election when heartbeats stop.").
+				Check()
+
+			do.GET(do.AllNodes(), "/cluster/info").
+				Eventually(2*time.Second).
+				Status(Is(200)).
+				JSON("term", GreaterThan(initialTerm)).
+				Hint(fmt.Sprintf("Term should increment after a new election (was %s).\n"+
+					"Candidates must increment currentTerm before starting an election.", initialTerm)).
+				Check()
+
+			do.Start(prevLeaderNode)
+
+			do.GET(Node(prevLeaderNode), "/cluster/info").
+				Eventually(2*time.Second).
+				Status(Is(200)).
+				JSON("term", GreaterThan(initialTerm)).
+				JSON("role", Is("follower")).
+				Hint(fmt.Sprintf("Restarted node should catch up to the current term (was %s) and become a follower.\n"+
+					"The leader's heartbeats will update the rejoining node's term.", initialTerm)).
+				Check()
+		}).
+
+		// 4
+		Test("Leader Maintains Authority via Heartbeats", func(do *Do) {
+			leaderNode := findLeader(do)
+			if leaderNode == "" {
+				panic("no leader found")
+			}
+
+			initialTerm := do.Fetch(leaderNode, "/cluster/info").JSON("term")
+
+			time.Sleep(3 * electionTimeout)
+
+			do.GET(Node(leaderNode), "/cluster/info").
+				Status(Is(200)).
+				JSON("role", Is("leader")).
+				JSON("term", Is(initialTerm)).
+				Hint("Leader changed during steady state - heartbeats may not be working.\n" +
+					"Send empty AppendEntries RPCs every 100ms to prevent followers from timing out.").
+				Check()
+		}).
+
+		// 5
+		Test("Follower Redirects to Leader", func(do *Do) {
+			followerNode := findFollower(do)
+			if followerNode == "" {
+				panic("no follower found")
+			}
+
+			do.PUT(Node(followerNode), "/kv/foo", "value").
+				Status(Is(307)).
+				Header("Location", Matches(`^http://10\.0\.42\.\d+:\d+/kv/foo$`)).
+				Hint("Followers should redirect write requests to the leader.\n" +
+					"Return HTTP 307 Temporary Redirect with a Location header pointing to\n" +
+					"the leader's address: http://10.0.42.X:<port>/kv/foo").
+				Check()
+		}).
+
+		// 6
+		Test("Service Unavailable During Election", func(do *Do) {
+			prevLeaderNode := findLeader(do)
+			if prevLeaderNode == "" {
+				panic("no leader found")
+			}
+
+			do.Kill(prevLeaderNode)
+
+			do.PUT(do.AllNodes(), "/kv/foo", "value").
+				Eventually(2 * heartbeatInterval).
+				Status(Is(503)).
+				Hint("When no leader is known, return 503 Service Unavailable.\n" +
+					"Clear the known-leader state when contact with the leader is lost.").
+				Check()
+
+			do.Start(prevLeaderNode)
+		}).
+
+		// 7
+		Test("Partition Enforces Quorum", func(do *Do) {
+			do.Partition([]string{"n1", "n2"}, []string{"n3", "n4", "n5"})
+
+			do.GET(do.ExactlyOneNode("n3", "n4", "n5"), "/cluster/info").
+				Eventually(2*time.Second).
+				Status(Is(200)).
+				JSON("role", Is("leader")).
+				Hint("The majority partition (3 of 5 nodes) should elect exactly one leader.").
+				Check()
+
+			do.GET(do.AllNodes("n1", "n2"), "/cluster/info").
+				Consistently(2*time.Second).
+				Status(Is(200)).
+				JSON("leader", IsNull[string]()).
+				Hint("The minority partition (2 of 5) must not elect a leader.\n" +
+					"A candidate needs votes from at least 3 nodes - with only 2 reachable\n" +
+					"no election can succeed.").
+				Check()
+		}).
+
+		// 8
+		Test("Cluster Converges After Partition Heals", func(do *Do) {
+			do.Heal()
+
+			leaderNode := findLeader(do)
+			if leaderNode == "" {
+				panic("no leader found")
+			}
+
+			info := do.Fetch(leaderNode, "/cluster/info")
+			leader := info.JSON("leader")
+			term := info.JSON("term")
+
+			do.GET(do.AllNodes(), "/cluster/info").
+				Eventually(2*time.Second).
+				Status(Is(200)).
+				JSON("leader", Is(leader)).
+				JSON("term", Is(term)).
+				Hint("After healing, all nodes should converge on the same leader.\n" +
+					"When a node receives an AppendEntries or RequestVote with a higher term,\n" +
+					"it must immediately revert to follower and update its term.").
+				Check()
+		})
 }

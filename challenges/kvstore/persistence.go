@@ -8,7 +8,9 @@ import (
 )
 
 func Persistence() *Suite {
-	return New(WithCluster(1)).
+	return New(
+		WithCluster(1),
+	).
 
 		// 1
 		Test("Verify Data Survives Graceful Restart", func(do *Do) {
@@ -20,7 +22,7 @@ func Persistence() *Suite {
 				"persistent:key4": strings.Repeat("long_value_", 50),
 			}
 			for key, value := range testData {
-				do.PUT("n1", fmt.Sprintf("/kv/%s", key), value).
+				do.PUT(Node("n1"), fmt.Sprintf("/kv/%s", key), value).
 					Status(Is(200)).
 					Hint("Your server should accept PUT requests and store data.\n" +
 						"Ensure your HTTP handler processes PUT requests correctly.").
@@ -29,7 +31,7 @@ func Persistence() *Suite {
 
 			// Verify data is accessible before restart
 			for key, expectedValue := range testData {
-				do.GET("n1", fmt.Sprintf("/kv/%s", key)).
+				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", key)).
 					Status(Is(200)).
 					Body(Is(expectedValue)).
 					Hint("Your server should return stored values before persistence test.\n" +
@@ -41,7 +43,7 @@ func Persistence() *Suite {
 
 			// Verify data survived the restart
 			for key, expectedValue := range testData {
-				do.GET("n1", fmt.Sprintf("/kv/%s", key)).
+				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", key)).
 					Status(Is(200)).
 					Body(Is(expectedValue)).
 					Hint("Your server should persist data across clean shutdowns.\n" +
@@ -59,7 +61,7 @@ func Persistence() *Suite {
 				cycleKey := fmt.Sprintf("cycle:restart_%d", cycle)
 				cycleValue := fmt.Sprintf("restart_data_%d", cycle)
 
-				do.PUT("n1", fmt.Sprintf("/kv/%s", cycleKey), cycleValue).
+				do.PUT(Node("n1"), fmt.Sprintf("/kv/%s", cycleKey), cycleValue).
 					Status(Is(200)).
 					Hint("Your server should store data for integrity test cycle.\n" +
 						"Ensure PUT operations work correctly during multiple restart cycles.").
@@ -69,7 +71,7 @@ func Persistence() *Suite {
 				do.Restart("n1")
 
 				// Verify cycle data persisted
-				do.GET("n1", fmt.Sprintf("/kv/%s", cycleKey)).
+				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", cycleKey)).
 					Status(Is(200)).
 					Body(Is(cycleValue)).
 					Hint("Your server should maintain data integrity across multiple restarts.\n" +
@@ -89,7 +91,7 @@ func Persistence() *Suite {
 				"cycle:restart_4": "restart_data_4",
 			}
 			for key, expectedValue := range allHistoricalData {
-				do.GET("n1", fmt.Sprintf("/kv/%s", key)).
+				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", key)).
 					Status(Is(200)).
 					Body(Is(expectedValue)).
 					Hint("Your server should preserve all historical data across restarts.\n" +
@@ -102,19 +104,19 @@ func Persistence() *Suite {
 		Test("Test Persistence When Under Concurrent Load", func(do *Do) {
 			// Generate concurrent load
 			do.Concurrently(10_000, func(i int) {
-				do.PUT("n1", fmt.Sprintf("/kv/load:concurrent%d", i), fmt.Sprintf("value%d", i)).
+				do.PUT(Node("n1"), fmt.Sprintf("/kv/load:concurrent%d", i), fmt.Sprintf("value%d", i)).
 					Status(Is(200)).
 					Hint("Your server should handle concurrent PUT requests under load.\n" +
 						"Ensure persistence works during high-traffic scenarios.").
 					Check()
 			})
 
-			// Immediately restart to test persistence under concurrent load
+			// Crash immediately
 			do.Restart("n1")
 
 			// Verify all concurrent data was persisted
 			for i := 1; i <= 10_000; i++ {
-				do.GET("n1", fmt.Sprintf("/kv/load:concurrent%d", i)).
+				do.GET(Node("n1"), fmt.Sprintf("/kv/load:concurrent%d", i)).
 					Status(Is(200)).
 					Body(Is(fmt.Sprintf("value%d", i))).
 					Hint("Your server should persist all concurrent writes.\n" +
