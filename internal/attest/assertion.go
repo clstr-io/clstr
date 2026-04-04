@@ -3,6 +3,7 @@ package attest
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -82,7 +83,7 @@ type Assertion struct {
 	body    []byte
 
 	selector NodeSelector
-	urls []string
+	urls     []string
 	results  []result
 
 	statusCheckers []Checker[int]
@@ -294,7 +295,12 @@ func (a *Assertion) verify() {
 
 func (a *Assertion) reportFailure(r result, formatHelp func() string) {
 	if r.err != nil {
-		panic(fmt.Sprintf("%s %s\n  Error: %v%s", a.method, r.url, r.err, formatHelp()))
+		errMsg := r.err.Error()
+		if errors.Is(r.err, context.DeadlineExceeded) {
+			errMsg = fmt.Sprintf("Request timed out: server did not respond within %s", a.config.requestTimeout)
+		}
+
+		panic(fmt.Sprintf("%s %s\n  %s%s", a.method, r.url, errMsg, formatHelp()))
 	}
 
 	checkAll(r.status, a.statusCheckers, func(m Checker[int], actual int) {
