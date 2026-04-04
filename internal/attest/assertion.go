@@ -57,6 +57,16 @@ func consistently(ctx context.Context, condition func() bool, timeout, pollInter
 	return true
 }
 
+// result holds the response from a single node.
+type result struct {
+	url     string
+	status  int
+	headers http.Header
+	body    string
+	err     error
+	passed  bool
+}
+
 // Assertion describes an HTTP request and the conditions its response must satisfy.
 type Assertion struct {
 	timing  timing
@@ -68,16 +78,23 @@ type Assertion struct {
 	client *http.Client
 
 	method  string
-	url     string
 	headers H
 	body    []byte
 
-	responseBody   string
-	responseStatus int
+	selector NodeSelector
+	urls []string
+	results  []result
 
 	statusCheckers []Checker[int]
+	headerCheckers []headerChecker
 	bodyCheckers   []Checker[string]
 	jsonCheckers   []Checker[string]
+}
+
+// headerChecker pairs a header name with checkers for its value.
+type headerChecker struct {
+	name     string
+	checkers []Checker[string]
 }
 
 // Eventually configures the assertion to retry until success or timeout.
@@ -128,6 +145,12 @@ func (a *Assertion) JSON(path string, checkers ...Checker[string]) *Assertion {
 	return a
 }
 
+// Header adds checkers for the named response header. All checkers must pass.
+func (a *Assertion) Header(name string, checkers ...Checker[string]) *Assertion {
+	a.headerCheckers = append(a.headerCheckers, headerChecker{name: name, checkers: checkers})
+	return a
+}
+
 // Hint sets the help text shown when the assertion fails.
 func (a *Assertion) Hint(help string) *Assertion {
 	a.hint = help
@@ -149,12 +172,42 @@ func (a *Assertion) Check() {
 }
 
 func (a *Assertion) execute() bool {
+	results := make([]result, len(a.urls))
+
+	for i, url := range a.urls {
+		r := result{url: url}
+		r.passed, r.err = a.executeOne(url, &r)
+		results[i] = r
+	}
+
+	a.results = results
+
+	passed := 0
+	for _, r := range results {
+		if r.passed {
+			passed++
+		}
+	}
+
+	switch a.selector.kind {
+	case nodeNamed, nodeAll:
+		return passed == len(results)
+	case nodeExactlyOne:
+		return passed == 1
+	case nodeAtLeastOne:
+		return passed >= 1
+	}
+
+	return false
+}
+
+func (a *Assertion) executeOne(url string, r *result) (bool, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, a.config.requestTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, a.method, a.url, bytes.NewReader(a.body))
+	req, err := http.NewRequestWithContext(ctx, a.method, url, bytes.NewReader(a.body))
 	if err != nil {
-		panic(fmt.Sprintf("An error occurred: %v", err))
+		return false, err
 	}
 
 	for key, value := range a.headers {
@@ -163,24 +216,57 @@ func (a *Assertion) execute() bool {
 
 	resp, err := a.client.Do(req)
 	if err != nil {
-		panic(fmt.Sprintf("An error occurred: %v", err))
+		return false, err
 	}
 	defer resp.Body.Close()
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		panic(fmt.Sprintf("An error occurred: %v", err))
+		return false, err
 	}
 
-	a.responseBody = string(responseBody)
-	a.responseStatus = resp.StatusCode
+	r.status = resp.StatusCode
+	r.headers = resp.Header
+	r.body = string(responseBody)
 
-	return checkAll(a.responseStatus, a.statusCheckers, nil) &&
-		checkAll(a.responseBody, a.bodyCheckers, nil) &&
-		checkAll(a.responseBody, a.jsonCheckers, nil)
+	headersOk := true
+	for _, hc := range a.headerCheckers {
+		if !checkAll(r.headers.Get(hc.name), hc.checkers, nil) {
+			headersOk = false
+			break
+		}
+	}
+
+	return checkAll(r.status, a.statusCheckers, nil) &&
+		headersOk &&
+		checkAll(r.body, a.bodyCheckers, nil) &&
+		checkAll(r.body, a.jsonCheckers, nil), nil
 }
 
 func (a *Assertion) verify() {
+	passed := 0
+	for _, r := range a.results {
+		if r.passed {
+			passed++
+		}
+	}
+	total := len(a.results)
+
+	switch a.selector.kind {
+	case nodeNamed, nodeAll:
+		if passed == total {
+			return
+		}
+	case nodeExactlyOne:
+		if passed == 1 {
+			return
+		}
+	case nodeAtLeastOne:
+		if passed >= 1 {
+			return
+		}
+	}
+
 	formatHelp := func() string {
 		if a.hint == "" {
 			return ""
@@ -189,18 +275,48 @@ func (a *Assertion) verify() {
 		return "\n\n  " + strings.ReplaceAll(a.hint, "\n", "\n  ")
 	}
 
-	checkAll(a.responseStatus, a.statusCheckers, func(m Checker[int], actual int) {
+	if total > 1 {
+		var desc string
+		switch a.selector.kind {
+		case nodeExactlyOne:
+			desc = fmt.Sprintf("exactly 1 node to satisfy, %d did", passed)
+		case nodeAtLeastOne:
+			desc = "at least 1 node to satisfy, 0 did"
+		case nodeAll:
+			desc = fmt.Sprintf("all %d nodes to satisfy, %d did not", total, total-passed)
+		}
+
+		panic(fmt.Sprintf("%s - expected %s%s", a.method, desc, formatHelp()))
+	}
+
+	a.reportFailure(a.results[0], formatHelp)
+}
+
+func (a *Assertion) reportFailure(r result, formatHelp func() string) {
+	if r.err != nil {
+		panic(fmt.Sprintf("%s %s\n  Error: %v%s", a.method, r.url, r.err, formatHelp()))
+	}
+
+	checkAll(r.status, a.statusCheckers, func(m Checker[int], actual int) {
 		panic(fmt.Sprintf("%s %s\n  Expected status: %s\n  Actual status: %d %s%s",
-			a.method, a.url, m.Expected(), actual, http.StatusText(actual), formatHelp()))
+			a.method, r.url, m.Expected(), actual, http.StatusText(actual), formatHelp()))
 	})
 
-	checkAll(a.responseBody, a.bodyCheckers, func(m Checker[string], actual string) {
+	for _, hc := range a.headerCheckers {
+		value := r.headers.Get(hc.name)
+		checkAll(value, hc.checkers, func(m Checker[string], actual string) {
+			panic(fmt.Sprintf("%s %s\n  Expected header %s: %s\n  Actual value: %q%s",
+				a.method, r.url, hc.name, m.Expected(), actual, formatHelp()))
+		})
+	}
+
+	checkAll(r.body, a.bodyCheckers, func(m Checker[string], actual string) {
 		panic(fmt.Sprintf("%s %s\n  Expected response: %s\n  Actual response: %q%s",
-			a.method, a.url, m.Expected(), actual, formatHelp()))
+			a.method, r.url, m.Expected(), actual, formatHelp()))
 	})
 
-	checkAll(a.responseBody, a.jsonCheckers, func(m Checker[string], actual string) {
+	checkAll(r.body, a.jsonCheckers, func(m Checker[string], actual string) {
 		panic(fmt.Sprintf("%s %s\n  Expected JSON: %s\n  Actual value: %v%s",
-			a.method, a.url, m.Expected(), actual, formatHelp()))
+			a.method, r.url, m.Expected(), actual, formatHelp()))
 	})
 }

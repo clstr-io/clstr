@@ -91,7 +91,7 @@ func (s *Suite) Run(ctx context.Context) bool {
 		}()
 	}
 
-	// Run each test, stopping on first failure or cancellation
+	// Run each test, stopping on first failure or cancellation.
 	for _, test := range s.tests {
 		if failed {
 			break

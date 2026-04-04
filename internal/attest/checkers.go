@@ -1,6 +1,7 @@
 package attest
 
 import (
+	"cmp"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -34,6 +35,42 @@ func (m isChecker[T]) Check(actual T) bool {
 
 func (m isChecker[T]) Expected() string {
 	return fmt.Sprintf("%v", m.value)
+}
+
+// greaterThanChecker validates that a value is greater than a reference value.
+type greaterThanChecker[T cmp.Ordered] struct {
+	value T
+}
+
+// GreaterThan creates a checker that asserts actual > value.
+func GreaterThan[T cmp.Ordered](value T) greaterThanChecker[T] {
+	return greaterThanChecker[T]{value: value}
+}
+
+func (m greaterThanChecker[T]) Check(actual T) bool {
+	return actual > m.value
+}
+
+func (m greaterThanChecker[T]) Expected() string {
+	return fmt.Sprintf("> %v", m.value)
+}
+
+// lessThanChecker validates that a value is less than a reference value.
+type lessThanChecker[T cmp.Ordered] struct {
+	value T
+}
+
+// LessThan creates a checker that asserts actual < value.
+func LessThan[T cmp.Ordered](value T) lessThanChecker[T] {
+	return lessThanChecker[T]{value: value}
+}
+
+func (m lessThanChecker[T]) Check(actual T) bool {
+	return actual < m.value
+}
+
+func (m lessThanChecker[T]) Expected() string {
+	return fmt.Sprintf("< %v", m.value)
 }
 
 // isNullChecker validates that a value is nil.
