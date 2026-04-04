@@ -14,7 +14,6 @@ func Persistence() *Suite {
 
 		// 1
 		Test("Verify Data Survives Graceful Restart", func(do *Do) {
-			// Store initial data
 			testData := map[string]string{
 				"persistent:key1": "value1",
 				"persistent:key2": "value with spaces",
@@ -29,7 +28,6 @@ func Persistence() *Suite {
 					Check()
 			}
 
-			// Verify data is accessible before restart
 			for key, expectedValue := range testData {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", key)).
 					Status(Is(200)).
@@ -41,7 +39,6 @@ func Persistence() *Suite {
 
 			do.Restart("n1")
 
-			// Verify data survived the restart
 			for key, expectedValue := range testData {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", key)).
 					Status(Is(200)).
@@ -55,9 +52,7 @@ func Persistence() *Suite {
 
 		// 2
 		Test("Check Data Integrity After Multiple Restarts", func(do *Do) {
-			// Perform multiple cycles of data operations and restarts
 			for cycle := 1; cycle <= 4; cycle++ {
-				// Add cycle-specific data
 				cycleKey := fmt.Sprintf("cycle:restart_%d", cycle)
 				cycleValue := fmt.Sprintf("restart_data_%d", cycle)
 
@@ -67,10 +62,8 @@ func Persistence() *Suite {
 						"Ensure PUT operations work correctly during multiple restart cycles.").
 					Check()
 
-				// Restart the server
 				do.Restart("n1")
 
-				// Verify cycle data persisted
 				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", cycleKey)).
 					Status(Is(200)).
 					Body(Is(cycleValue)).
@@ -79,7 +72,6 @@ func Persistence() *Suite {
 					Check()
 			}
 
-			// Verify all historical data still exists
 			allHistoricalData := map[string]string{
 				"persistent:key1": "value1",
 				"persistent:key2": "value with spaces",
@@ -102,7 +94,6 @@ func Persistence() *Suite {
 
 		// 3
 		Test("Test Persistence When Under Concurrent Load", func(do *Do) {
-			// Generate concurrent load
 			do.Concurrently(10_000, func(i int) {
 				do.PUT(Node("n1"), fmt.Sprintf("/kv/load:concurrent%d", i), fmt.Sprintf("value%d", i)).
 					Status(Is(200)).
@@ -111,10 +102,8 @@ func Persistence() *Suite {
 					Check()
 			})
 
-			// Crash immediately
 			do.Restart("n1")
 
-			// Verify all concurrent data was persisted
 			for i := 1; i <= 10_000; i++ {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/load:concurrent%d", i)).
 					Status(Is(200)).

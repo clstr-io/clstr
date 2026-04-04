@@ -15,7 +15,6 @@ func CrashRecovery() *Suite {
 
 		// 1
 		Test("Basic WAL Durability", func(do *Do) {
-			// Test various operations that should all be logged
 			do.PUT(Node("n1"), "/kv/wal:basic", "initial").
 				Status(Is(200)).
 				Hint("Your server should accept PUT requests.\n" +
@@ -46,10 +45,8 @@ func CrashRecovery() *Suite {
 					"Ensure your HTTP handler processes DELETE requests correctly.").
 				Check()
 
-			// Crash immediately
 			do.Restart("n1", syscall.SIGKILL)
 
-			// Verify correct final state after recovery
 			do.GET(Node("n1"), "/kv/wal:basic").
 				Status(Is(200)).
 				Body(Is("initial")).
@@ -74,9 +71,7 @@ func CrashRecovery() *Suite {
 
 		// 2
 		Test("Multiple Crash Recovery Cycles", func(do *Do) {
-			// Simulate multiple crash/restart cycles
 			for cycle := 1; cycle <= 4; cycle++ {
-				// Add cycle-specific data
 				cycleKey := fmt.Sprintf("cycle:crash_%d", cycle)
 				cycleValue := fmt.Sprintf("crash_data_%d", cycle)
 
@@ -86,10 +81,8 @@ func CrashRecovery() *Suite {
 						"Ensure your HTTP handler processes PUT requests correctly.").
 					Check()
 
-				// Crash immediately
 				do.Restart("n1", syscall.SIGKILL)
 
-				// Verify cycle data survived
 				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", cycleKey)).
 					Status(Is(200)).
 					Body(Is(cycleValue)).
@@ -98,7 +91,6 @@ func CrashRecovery() *Suite {
 					Check()
 			}
 
-			// Verify all historical data from all cycles still exists
 			allHistoricalData := map[string]string{
 				"wal:basic":     "initial",
 				"wal:updated":   "v2",
@@ -120,7 +112,6 @@ func CrashRecovery() *Suite {
 
 		// 3
 		Test("Rapid Write Burst Before Crash", func(do *Do) {
-			// Write many operations rapidly in sequence
 			for i := 1; i <= 500; i++ {
 				do.PUT(Node("n1"), fmt.Sprintf("/kv/burst:%d", i), strings.Repeat("data", 250)).
 					Status(Is(200)).
@@ -129,10 +120,8 @@ func CrashRecovery() *Suite {
 					Check()
 			}
 
-			// Crash immediately
 			do.Restart("n1", syscall.SIGKILL)
 
-			// Verify all acknowledged writes survived
 			for i := 1; i <= 500; i++ {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/burst:%d", i)).
 					Status(Is(200)).
@@ -146,7 +135,6 @@ func CrashRecovery() *Suite {
 
 		// 4
 		Test("Test Recovery When Under Concurrent Load", func(do *Do) {
-			// Generate concurrent load
 			do.Concurrently(10_000, func(i int) {
 				do.PUT(Node("n1"), fmt.Sprintf("/kv/large:key%d", i), strings.Repeat("x", 100)).
 					Status(Is(200)).
@@ -155,10 +143,8 @@ func CrashRecovery() *Suite {
 					Check()
 			})
 
-			// Crash immediately
 			do.Restart("n1", syscall.SIGKILL)
 
-			// Verify all acknowledged writes survived
 			for i := 1; i <= 10_000; i++ {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/large:key%d", i)).
 					Status(Is(200)).

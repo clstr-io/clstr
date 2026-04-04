@@ -14,7 +14,6 @@ func HTTPAPI() *Suite {
 
 		// 1
 		Test("PUT Basic Operations", func(do *Do) {
-			// Set initial key-value pairs that subsequent tests can rely on
 			capitals := map[string]string{
 				"kenya":    "Nairobi",
 				"uganda":   "Kampala",
@@ -28,14 +27,12 @@ func HTTPAPI() *Suite {
 					Check()
 			}
 
-			// Test overwrite behavior
 			do.PUT(Node("n1"), "/kv/tanzania:capital", "Dodoma").
 				Status(Is(200)).
 				Hint("Your server should allow overwriting existing keys.\n" +
 					"Ensure PUT requests update the value of existing keys.").
 				Check()
 
-			// Verify overwrite worked
 			do.GET(Node("n1"), "/kv/tanzania:capital").
 				Status(Is(200)).
 				Body(Is("Dodoma")).
@@ -46,7 +43,6 @@ func HTTPAPI() *Suite {
 
 		// 2
 		Test("PUT Edge and Error Cases", func(do *Do) {
-			// Empty value
 			do.PUT(Node("n1"), "/kv/empty").
 				Status(Is(400)).
 				Body(Is("value cannot be empty\n")).
@@ -54,7 +50,6 @@ func HTTPAPI() *Suite {
 					"Add validation to return 400 Bad Request for empty values.").
 				Check()
 
-			// Empty key
 			do.PUT(Node("n1"), "/kv/", "some_value").
 				Status(Is(400)).
 				Body(Is("key cannot be empty\n")).
@@ -62,14 +57,12 @@ func HTTPAPI() *Suite {
 					"Add validation to return 400 Bad Request for empty keys.").
 				Check()
 
-			// Unicode handling
 			do.PUT(Node("n1"), "/kv/unicode:key", "🌍 Nairobi").
 				Status(Is(200)).
 				Hint("Your server should handle Unicode characters in values.\n" +
 					"Ensure your HTTP handler properly processes UTF-8 encoded data.").
 				Check()
 
-			// Long key and value
 			longKey := "long:" + strings.Repeat("k", 100)
 			longValue := strings.Repeat("v", 10_000)
 			do.PUT(Node("n1"), fmt.Sprintf("/kv/%s", longKey), longValue).
@@ -78,14 +71,12 @@ func HTTPAPI() *Suite {
 					"Ensure your server doesn't have arbitrary key & value length limits.").
 				Check()
 
-			// Special characters in key/value
 			do.PUT(Node("n1"), "/kv/special:key-with_symbols.123", "value with spaces & symbols! \t").
 				Status(Is(200)).
 				Hint("Your server should handle special characters in keys and values.\n" +
 					"Ensure proper URL path parsing and value encoding/decoding.").
 				Check()
 
-			// Verify special characters are retrieved correctly
 			do.GET(Node("n1"), "/kv/special:key-with_symbols.123").
 				Status(Is(200)).
 				Body(Is("value with spaces & symbols! \t")).
@@ -96,19 +87,20 @@ func HTTPAPI() *Suite {
 
 		// 3
 		Test("GET Basic Operations", func(do *Do) {
-			// Retrieve values we know exist from PUT tests
 			do.GET(Node("n1"), "/kv/kenya:capital").
 				Status(Is(200)).
 				Body(Is("Nairobi")).
 				Hint("Your server should return stored values with GET requests.\n" +
 					"Ensure your key-value storage and retrieval logic is working correctly.").
 				Check()
+
 			do.GET(Node("n1"), "/kv/uganda:capital").
 				Status(Is(200)).
 				Body(Is("Kampala")).
 				Hint("Your server should return stored values with GET requests.\n" +
 					"Ensure your key-value storage and retrieval logic is working correctly.").
 				Check()
+
 			do.GET(Node("n1"), "/kv/tanzania:capital").
 				Status(Is(200)).
 				Body(Is("Dodoma")).
@@ -116,7 +108,6 @@ func HTTPAPI() *Suite {
 					"Ensure overwrite operations update the stored value correctly.").
 				Check()
 
-			// Verify Unicode handling
 			do.GET(Node("n1"), "/kv/unicode:key").
 				Status(Is(200)).
 				Body(Is("🌍 Nairobi")).
@@ -124,7 +115,6 @@ func HTTPAPI() *Suite {
 					"Ensure proper UTF-8 handling in your storage and retrieval logic.").
 				Check()
 
-			// Verify long values
 			longKey := "long:" + strings.Repeat("k", 100)
 			longValue := strings.Repeat("v", 10_000)
 			do.GET(Node("n1"), fmt.Sprintf("/kv/%s", longKey)).
@@ -137,7 +127,6 @@ func HTTPAPI() *Suite {
 
 		// 4
 		Test("GET Edge and Error Cases", func(do *Do) {
-			// Non-existent key
 			do.GET(Node("n1"), "/kv/nonexistent:key").
 				Status(Is(404)).
 				Body(Is("key not found\n")).
@@ -145,7 +134,6 @@ func HTTPAPI() *Suite {
 					"Check your key lookup logic and error handling.").
 				Check()
 
-			// Case sensitivity test
 			do.GET(Node("n1"), "/kv/KENYA:CAPITAL").
 				Status(Is(404)).
 				Body(Is("key not found\n")).
@@ -153,7 +141,6 @@ func HTTPAPI() *Suite {
 					"Check your key lookup logic and error handling.").
 				Check()
 
-			// Empty key
 			do.GET(Node("n1"), "/kv/").
 				Status(Is(400)).
 				Body(Is("key cannot be empty\n")).
@@ -164,14 +151,12 @@ func HTTPAPI() *Suite {
 
 		// 5
 		Test("DELETE Basic Operations", func(do *Do) {
-			// Delete an existing key
 			do.DELETE(Node("n1"), "/kv/tanzania:capital").
 				Status(Is(200)).
 				Hint("Your server should accept DELETE requests.\n" +
 					"Ensure your HTTP handler processes DELETE requests to /kv/{key}.").
 				Check()
 
-			// Verify deletion worked
 			do.GET(Node("n1"), "/kv/tanzania:capital").
 				Status(Is(404)).
 				Body(Is("key not found\n")).
@@ -179,7 +164,6 @@ func HTTPAPI() *Suite {
 					"Check your key lookup logic and error handling.").
 				Check()
 
-			// Verify other keys still exist
 			do.GET(Node("n1"), "/kv/kenya:capital").
 				Status(Is(200)).
 				Body(Is("Nairobi")).
@@ -190,31 +174,30 @@ func HTTPAPI() *Suite {
 
 		// 6
 		Test("DELETE Edge and Error Cases", func(do *Do) {
-			// Delete non-existent key
 			do.DELETE(Node("n1"), "/kv/nonexistent:key").
 				Status(Is(200)).
 				Hint("Your server should gracefully handle deletion of non-existent keys.\n" +
 					"Returning 200 OK for missing keys is acceptable (idempotent).").
 				Check()
 
-			// Delete same key twice
 			do.PUT(Node("n1"), "/kv/delete:twice", "value").
 				Status(Is(200)).
 				Hint("Your server should accept PUT requests.\n" +
 					"Ensure your HTTP handler processes PUT requests to /kv/{key}.").
 				Check()
+
 			do.DELETE(Node("n1"), "/kv/delete:twice").
 				Status(Is(200)).
 				Hint("Your server should successfully delete existing keys.\n" +
 					"Implement proper key removal in your storage logic.").
 				Check()
+
 			do.DELETE(Node("n1"), "/kv/delete:twice").
 				Status(Is(200)).
 				Hint("Your server should handle repeated deletions gracefully.\n" +
 					"Deleting the same key twice should be idempotent (return 200 OK).").
 				Check()
 
-			// Empty key
 			do.DELETE(Node("n1"), "/kv/").
 				Status(Is(400)).
 				Body(Is("key cannot be empty\n")).
@@ -225,7 +208,6 @@ func HTTPAPI() *Suite {
 
 		// 7
 		Test("CLEAR Operations", func(do *Do) {
-			// Add some keys to clear
 			testKeys := map[string]string{
 				"clear:test1": "value1",
 				"clear:test2": "value2",
@@ -239,7 +221,6 @@ func HTTPAPI() *Suite {
 					Check()
 			}
 
-			// Verify keys exist
 			for key, value := range testKeys {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", key)).
 					Status(Is(200)).
@@ -249,14 +230,12 @@ func HTTPAPI() *Suite {
 					Check()
 			}
 
-			// Clear all keys
 			do.DELETE(Node("n1"), "/clear").
 				Status(Is(200)).
 				Hint("Your server should implement a /clear endpoint.\n" +
 					"Add a DELETE /clear method that deletes all key-value pairs.").
 				Check()
 
-			// Verify all keys are gone
 			for key := range testKeys {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", key)).
 					Status(Is(404)).
@@ -266,7 +245,6 @@ func HTTPAPI() *Suite {
 					Check()
 			}
 
-			// Verify old keys from previous tests are also gone
 			do.GET(Node("n1"), "/kv/kenya:capital").
 				Status(Is(404)).
 				Body(Is("key not found\n")).
@@ -274,7 +252,6 @@ func HTTPAPI() *Suite {
 					"Ensure the /clear endpoint removes every key-value pair, not just recent ones.").
 				Check()
 
-			// Test that clear on empty store works
 			do.DELETE(Node("n1"), "/clear").
 				Status(Is(200)).
 				Hint("Your server should handle clearing an empty store gracefully.\n" +
@@ -284,7 +261,6 @@ func HTTPAPI() *Suite {
 
 		// 8
 		Test("Concurrent Operations - Different Keys", func(do *Do) {
-			// Test concurrent writes to different keys
 			do.Concurrently(100, func(i int) {
 				do.PUT(Node("n1"), fmt.Sprintf("/kv/concurrent:key%d", i), fmt.Sprintf("value%d", i)).
 					Status(Is(200)).
@@ -293,7 +269,6 @@ func HTTPAPI() *Suite {
 					Check()
 			})
 
-			// Verify all concurrent writes succeeded
 			for i := 1; i <= 100; i++ {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/concurrent:key%d", i)).
 					Status(Is(200)).
@@ -314,7 +289,6 @@ func HTTPAPI() *Suite {
 					Check()
 			})
 
-			// Verify the key exists with one of the values (doesn't matter which)
 			expectedValues := make([]string, 100)
 			for i := range expectedValues {
 				expectedValues[i] = fmt.Sprintf("value%d", i+1)
@@ -330,7 +304,6 @@ func HTTPAPI() *Suite {
 
 		// 10
 		Test("Check Allowed HTTP Methods", func(do *Do) {
-			// POST & PATCH /kv/{key} not allowed
 			for _, plan := range []*Assertion{
 				do.POST(Node("n1"), "/kv/test:key"),
 				do.PATCH(Node("n1"), "/kv/test:key"),
@@ -343,7 +316,6 @@ func HTTPAPI() *Suite {
 					Check()
 			}
 
-			// GET, POST, PUT, PATCH /clear not allowed
 			for _, plan := range []*Assertion{
 				do.GET(Node("n1"), "/clear"),
 				do.POST(Node("n1"), "/clear"),
