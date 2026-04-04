@@ -46,9 +46,9 @@ func (do *Do) startCluster(names ...string) {
 		panic(err.Error())
 	}
 
-	resetDockerEnv(do.ctx, names)
+	resetDockerEnv(do.ctx, do.config.challengeKey, names)
 
-	err = buildDockerImage(do.ctx)
+	err = buildDockerImage(do.ctx, do.config.challengeKey)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -76,9 +76,10 @@ func (do *Do) startCluster(names ...string) {
 			panic(fmt.Sprintf("assign port for %q: %v", name, err))
 		}
 
-		containerName := "clstr-" + name
+		containerName := "clstr-" + do.config.challengeKey + "-" + name
 		node := &containerNode{
 			name:       containerName,
+			imageTag:   "clstr-" + do.config.challengeKey,
 			ip:         ips[name],
 			mappedPort: mappedPort,
 			peers:      peers,

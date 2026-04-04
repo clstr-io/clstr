@@ -98,7 +98,8 @@ func (do *Do) Start(name string) {
 		panic(fmt.Sprintf("start %q: %v", name, err))
 	}
 
-	err = waitUntilNodeReady(do.ctx, name, node, do.config.nodeStartTimeout, do.config.pollInterval)
+	containerName := "clstr-" + do.config.challengeKey + "-" + name
+	err = waitUntilNodeReady(do.ctx, name, containerName, node, do.config.nodeStartTimeout, do.config.pollInterval)
 	if err != nil {
 		panic(err.Error())
 	}

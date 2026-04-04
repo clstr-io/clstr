@@ -6,6 +6,7 @@ import (
 )
 
 type config struct {
+	challengeKey        string
 	nodes               []string
 	nodeStartTimeout    time.Duration
 	nodeShutdownTimeout time.Duration
@@ -27,6 +28,13 @@ func defaultConfig() *config {
 // Option configures a Suite.
 type Option func(*config)
 
+// WithChallenge sets the challenge key used to namespace Docker resources.
+func WithChallenge(key string) Option {
+	return func(c *config) {
+		c.challengeKey = key
+	}
+}
+
 // WithCluster declares N nodes named n1, n2, ... nN.
 func WithCluster(n int) Option {
 	if n < 1 {
@@ -43,25 +51,35 @@ func WithCluster(n int) Option {
 
 // WithNodeStartTimeout sets how long to wait for a node to accept connections after starting.
 func WithNodeStartTimeout(d time.Duration) Option {
-	return func(c *config) { c.nodeStartTimeout = d }
+	return func(c *config) {
+		c.nodeStartTimeout = d
+	}
 }
 
 // WithNodeShutdownTimeout sets how long to wait for a node to exit before sending SIGKILL.
 func WithNodeShutdownTimeout(d time.Duration) Option {
-	return func(c *config) { c.nodeShutdownTimeout = d }
+	return func(c *config) {
+		c.nodeShutdownTimeout = d
+	}
 }
 
 // WithAssertTimeout sets the default timeout for Eventually and Consistently.
 func WithAssertTimeout(d time.Duration) Option {
-	return func(c *config) { c.assertTimeout = d }
+	return func(c *config) {
+		c.assertTimeout = d
+	}
 }
 
 // WithPollInterval sets how often Eventually and Consistently poll.
 func WithPollInterval(d time.Duration) Option {
-	return func(c *config) { c.pollInterval = d }
+	return func(c *config) {
+		c.pollInterval = d
+	}
 }
 
 // WithRequestTimeout sets the HTTP client timeout per request.
 func WithRequestTimeout(d time.Duration) Option {
-	return func(c *config) { c.requestTimeout = d }
+	return func(c *config) {
+		c.requestTimeout = d
+	}
 }

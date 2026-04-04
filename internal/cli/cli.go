@@ -8,6 +8,7 @@ import (
 
 	_ "github.com/clstr-io/clstr/challenges"
 	"github.com/clstr-io/clstr/images"
+	"github.com/clstr-io/clstr/internal/attest"
 	"github.com/clstr-io/clstr/internal/registry"
 	"github.com/clstr-io/clstr/internal/state"
 	"github.com/fatih/color"
@@ -146,7 +147,7 @@ func runStageTests(ctx context.Context, challengeKey, stageKey string) (bool, er
 		return false, fmt.Errorf("%w\n%s", err, msg)
 	}
 
-	suite := stage.Fn()
+	suite := stage.Fn().With(attest.WithChallenge(challengeKey))
 	fmt.Printf("Testing %s: %s\n\n", stageKey, stage.Name)
 	passed := suite.Run(ctx)
 	return passed, nil

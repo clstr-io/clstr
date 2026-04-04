@@ -35,10 +35,10 @@ func checkDockerDaemon(ctx context.Context) error {
 
 // buildDockerImage builds the challenge Docker image from the Dockerfile in the
 // current directory.
-func buildDockerImage(ctx context.Context) error {
+func buildDockerImage(ctx context.Context, challengeKey string) error {
 	var buf bytes.Buffer
 
-	cmd := exec.CommandContext(ctx, "docker", "build", "-t", "clstr-challenge", "--label", "io.clstr=true", ".")
+	cmd := exec.CommandContext(ctx, "docker", "build", "-t", "clstr-"+challengeKey, "--label", "io.clstr=true", ".")
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 
@@ -50,7 +50,7 @@ func buildDockerImage(ctx context.Context) error {
 	return nil
 }
 
-// createDockerNetwork creates the clstr Docker network.
+// createDockerNetwork creates the clstr Docker network if it does not already exist.
 func createDockerNetwork(ctx context.Context) error {
 	out, err := exec.CommandContext(
 		ctx, "docker", "network", "create", "--subnet", dockerSubnet, dockerNetwork,
@@ -62,11 +62,11 @@ func createDockerNetwork(ctx context.Context) error {
 	return nil
 }
 
-// resetDockerEnv cleans the docker environment.
-func resetDockerEnv(ctx context.Context, containerNames []string) {
+// resetDockerEnv cleans up containers and volumes for the given challenge.
+func resetDockerEnv(ctx context.Context, challengeKey string, containerNames []string) {
 	for _, name := range containerNames {
-		exec.CommandContext(ctx, "docker", "rm", "-f", "clstr-"+name).Run()
-		exec.CommandContext(ctx, "docker", "volume", "rm", "clstr-"+name+"-data").Run()
+		exec.CommandContext(ctx, "docker", "rm", "-f", "clstr-"+challengeKey+"-"+name).Run()
+		exec.CommandContext(ctx, "docker", "volume", "rm", "clstr-"+challengeKey+"-"+name+"-data").Run()
 	}
 
 	exec.CommandContext(ctx, "docker", "network", "rm", dockerNetwork).Run()
@@ -76,6 +76,7 @@ func resetDockerEnv(ctx context.Context, containerNames []string) {
 // containerNode is a cluster node running as a Docker container.
 type containerNode struct {
 	name       string
+	imageTag   string
 	ip         string
 	mappedPort int
 	peers      []string
@@ -105,7 +106,7 @@ func (n *containerNode) Start(ctx context.Context) error {
 		"--cap-add", "NET_ADMIN",
 		"-p", fmt.Sprintf("%d:%d", n.mappedPort, containerPort),
 		"-v", fmt.Sprintf("%s:/app/data", n.name+"-data"),
-		"clstr-challenge",
+		n.imageTag,
 		"--data-dir=/app/data",
 		fmt.Sprintf("--peers=%s", strings.Join(n.peers, ",")),
 	}
@@ -156,7 +157,7 @@ func (n *containerNode) Exec(ctx context.Context, args ...string) error {
 	return nil
 }
 
-func waitUntilNodeReady(ctx context.Context, name string, node clusterNode, timeout, pollInterval time.Duration) error {
+func waitUntilNodeReady(ctx context.Context, logicalName, containerName string, node clusterNode, timeout, pollInterval time.Duration) error {
 	url := fmt.Sprintf("http://127.0.0.1:%d/health", node.MappedPort())
 
 	succeeded := eventually(ctx, func() bool {
@@ -176,11 +177,11 @@ func waitUntilNodeReady(ctx context.Context, name string, node clusterNode, time
 		default:
 			msg := fmt.Sprintf(
 				"node %q did not become ready at %s within %s",
-				name, url, timeout,
+				logicalName, url, timeout,
 			)
-			logs, _ := exec.CommandContext(context.Background(), "docker", "logs", "clstr-"+name).CombinedOutput()
+			logs, _ := exec.CommandContext(context.Background(), "docker", "logs", containerName).CombinedOutput()
 
-			return fmt.Errorf("%s\n\ndocker logs clstr-%s:\n%s", msg, name, string(logs))
+			return fmt.Errorf("%s\n\ndocker logs %s:\n%s", msg, containerName, string(logs))
 		}
 	}
 
