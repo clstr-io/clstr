@@ -19,7 +19,7 @@ type State struct {
 func Load() (*State, error) {
 	_, err := os.Stat(statePath)
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("Not in a challenge directory\nRun this command from a directory created with 'clstr init <challenge>'")
+		return nil, fmt.Errorf("Not in a challenge directory.\nRun this command from a directory created with 'clstr init <challenge>'.")
 	}
 
 	bytes, err := os.ReadFile(statePath)
