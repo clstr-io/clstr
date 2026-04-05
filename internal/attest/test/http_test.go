@@ -43,23 +43,23 @@ func TestHTTP(t *testing.T) {
 				do.PUT(Node("n1"), "/kv/kenya:capital", "Nairobi").
 					Status(Is(200)).
 					Hint("Server should handle PUT requests properly").
-					Check()
+					Run()
 
 				do.GET(Node("n1"), "/kv/kenya:capital").
 					Status(Is(200)).
 					Body(Is("Nairobi")).
 					Hint("Server should handle GET requests properly").
-					Check()
+					Run()
 
 				do.PATCH(Node("n1"), "/kv/kenya:capital").
 					Status(Is(405)).
 					Hint("Server should return 405 for unsupported methods").
-					Check()
+					Run()
 
 				do.GET(Node("n1"), "/unknown").
 					Status(Is(404)).
 					Hint("Server should return 404 for non-existent endpoints").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -72,7 +72,7 @@ func TestHTTP(t *testing.T) {
 				do.GET(Node("n1"), "/").
 					Status(Is(200)).
 					Hint("Should fail when expecting 200 OK but server returns 404").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -86,7 +86,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Is("Nairobi")).
 					Hint("Should fail when expecting 'Nairobi' but server returns 'Mombasa'").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -104,7 +104,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Is("Done")).
 					Hint("Should fail when request times out before server responds").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -128,7 +128,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Is("Ready")).
 					Hint("Service should eventually become ready").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -144,7 +144,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Is("Ready")).
 					Hint("Should fail when service never becomes ready within timeout").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -160,7 +160,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Is("Ready")).
 					Hint("Should fail when operation is cancelled before completion").
-					Check()
+					Run()
 			},
 			cancel: func(do *Do) {
 				go func() {
@@ -182,7 +182,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Is("Stable")).
 					Hint("Service should remain consistently available").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -205,7 +205,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Is("Stable")).
 					Hint("Should fail when service returns intermittent errors").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -221,7 +221,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Is("Stable")).
 					Hint("Should pass when cancelled during consistency check").
-					Check()
+					Run()
 			},
 			cancel: func(do *Do) {
 				go func() {
@@ -242,7 +242,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Contains("file not found")).
 					Hint("Should accept response containing the substring").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -257,7 +257,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Contains("error")).
 					Hint("Should fail when substring is not in response").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -272,7 +272,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Matches(`User ID: \d+`)).
 					Hint("Should match regex pattern").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -287,7 +287,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Matches(`User ID: \d+`)).
 					Hint("Should fail when pattern doesn't match").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -302,7 +302,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(HasLen[string](5)).
 					Hint("Should pass when body length matches").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -317,7 +317,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(HasLen[string](5)).
 					Hint("Should fail when body length doesn't match").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -332,7 +332,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					JSON("items", HasLen[string](3)).
 					Hint("Should pass when JSON array length matches").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -347,7 +347,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					JSON("items", HasLen[string](3)).
 					Hint("Should fail when JSON array length doesn't match").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -362,7 +362,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					JSON("name", HasLen[string](5)).
 					Hint("Should pass when JSON string field length matches").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -377,7 +377,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					JSON("items", HasLen[string](0)).
 					Hint("Should pass when JSON array is empty and length is 0").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -392,7 +392,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(OneOf("value1", "value2", "value3")).
 					Hint("Should accept value2 as one of the valid options").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -407,7 +407,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(OneOf("value1", "value2", "value3")).
 					Hint("Should fail when response is not in the list of valid values").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -422,7 +422,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Not(Contains("error"))).
 					Hint("Should pass when negated checker doesn't match").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -437,7 +437,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Not(Contains("Error"))).
 					Hint("Should fail when negated checker matches").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -454,7 +454,7 @@ func TestHTTP(t *testing.T) {
 					JSON("leader", IsNull[string]()).
 					JSON("term", Is("1")).
 					Hint("Should match JSON fields").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -470,7 +470,7 @@ func TestHTTP(t *testing.T) {
 					JSON("entries.0.term", Is("1")).
 					JSON("entries.1.index", Is("1")).
 					Hint("Should match nested JSON fields").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -485,7 +485,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					JSON("role", Is("leader")).
 					Hint("Should fail when JSON field doesn't match").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -500,7 +500,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					JSON("leader", IsNull[string]()).
 					Hint("Should fail when expecting null but value is not null").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},
@@ -513,7 +513,7 @@ func TestHTTP(t *testing.T) {
 				do.GET(Node("n1"), "/").
 					Status(Is(200), Not(Is(404)), Not(Is(500))).
 					Hint("Should pass when all status checkers pass").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -528,7 +528,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Contains("Hello"), Contains("World"), Not(Contains("Goodbye"))).
 					Hint("Should pass when all body checkers pass").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -543,7 +543,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					JSON("role", Is("leader"), Not(Is("follower")), Not(Is("candidate"))).
 					Hint("Should pass when all checkers for the same JSON field pass").
-					Check()
+					Run()
 			},
 			shouldPass: true,
 		},
@@ -558,7 +558,7 @@ func TestHTTP(t *testing.T) {
 					Status(Is(200)).
 					Body(Contains("Hello"), Contains("Goodbye")).
 					Hint("Should fail when one of the checkers fails").
-					Check()
+					Run()
 			},
 			shouldPass: false,
 		},

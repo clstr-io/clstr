@@ -155,8 +155,8 @@ func (do *Do) Done() {
 	})
 }
 
-// http creates an assertion for an HTTP request to the node(s) described by sel.
-func (do *Do) http(sel NodeSelector, method, path string, args ...any) *Assertion {
+// http creates a Check for an HTTP request to the node(s) described by sel.
+func (do *Do) http(sel NodeSelector, method, path string, args ...any) *Check {
 	var body []byte
 	if len(args) >= 1 {
 		body = []byte(args[0].(string))
@@ -167,7 +167,7 @@ func (do *Do) http(sel NodeSelector, method, path string, args ...any) *Assertio
 		headers = args[1].(H)
 	}
 
-	a := &Assertion{
+	a := &Check{
 		timing:   timingImmediate,
 		ctx:      do.ctx,
 		config:   do.config,
@@ -181,6 +181,7 @@ func (do *Do) http(sel NodeSelector, method, path string, args ...any) *Assertio
 	if sel.kind == nodeNamed {
 		node := do.getNode(sel.names[0])
 		a.urls = []string{fmt.Sprintf("http://127.0.0.1:%d%s", node.MappedPort(), path)}
+		a.nodeNames = []string{sel.names[0]}
 	} else {
 		names := sel.names
 		if len(names) == 0 {
@@ -191,6 +192,7 @@ func (do *Do) http(sel NodeSelector, method, path string, args ...any) *Assertio
 			node := do.getNode(name)
 			if node.IsAlive() {
 				a.urls = append(a.urls, fmt.Sprintf("http://127.0.0.1:%d%s", node.MappedPort(), path))
+				a.nodeNames = append(a.nodeNames, name)
 			}
 		}
 	}
@@ -198,27 +200,27 @@ func (do *Do) http(sel NodeSelector, method, path string, args ...any) *Assertio
 	return a
 }
 
-// GET creates an assertion for an HTTP GET request.
-func (do *Do) GET(sel NodeSelector, path string, args ...any) *Assertion {
+// GET creates a Check for an HTTP GET request.
+func (do *Do) GET(sel NodeSelector, path string, args ...any) *Check {
 	return do.http(sel, "GET", path, args...)
 }
 
-// POST creates an assertion for an HTTP POST request.
-func (do *Do) POST(sel NodeSelector, path string, args ...any) *Assertion {
+// POST creates a Check for an HTTP POST request.
+func (do *Do) POST(sel NodeSelector, path string, args ...any) *Check {
 	return do.http(sel, "POST", path, args...)
 }
 
-// PUT creates an assertion for an HTTP PUT request.
-func (do *Do) PUT(sel NodeSelector, path string, args ...any) *Assertion {
+// PUT creates a Check for an HTTP PUT request.
+func (do *Do) PUT(sel NodeSelector, path string, args ...any) *Check {
 	return do.http(sel, "PUT", path, args...)
 }
 
-// DELETE creates an assertion for an HTTP DELETE request.
-func (do *Do) DELETE(sel NodeSelector, path string, args ...any) *Assertion {
+// DELETE creates a Check for an HTTP DELETE request.
+func (do *Do) DELETE(sel NodeSelector, path string, args ...any) *Check {
 	return do.http(sel, "DELETE", path, args...)
 }
 
-// PATCH creates an assertion for an HTTP PATCH request.
-func (do *Do) PATCH(sel NodeSelector, path string, args ...any) *Assertion {
+// PATCH creates a Check for an HTTP PATCH request.
+func (do *Do) PATCH(sel NodeSelector, path string, args ...any) *Check {
 	return do.http(sel, "PATCH", path, args...)
 }

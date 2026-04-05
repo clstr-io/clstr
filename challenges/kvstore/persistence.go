@@ -25,7 +25,7 @@ func Persistence() *Suite {
 					Status(Is(200)).
 					Hint("Your server should accept PUT requests and store data.\n" +
 						"Ensure your HTTP handler processes PUT requests correctly.").
-					Check()
+					Run()
 			}
 
 			for key, expectedValue := range testData {
@@ -34,7 +34,7 @@ func Persistence() *Suite {
 					Body(Is(expectedValue)).
 					Hint("Your server should return stored values before persistence test.\n" +
 						"Ensure basic storage functionality works correctly.").
-					Check()
+					Run()
 			}
 
 			do.Restart("n1")
@@ -46,7 +46,7 @@ func Persistence() *Suite {
 					Hint("Your server should persist data across clean shutdowns.\n" +
 						"Implement data persistence to disk (file-based storage, database, etc.).\n" +
 						"Ensure data is written to persistent storage on PUT operations.").
-					Check()
+					Run()
 			}
 		}).
 
@@ -60,7 +60,7 @@ func Persistence() *Suite {
 					Status(Is(200)).
 					Hint("Your server should store data for integrity test cycle.\n" +
 						"Ensure PUT operations work correctly during multiple restart cycles.").
-					Check()
+					Run()
 
 				do.Restart("n1")
 
@@ -69,7 +69,7 @@ func Persistence() *Suite {
 					Body(Is(cycleValue)).
 					Hint("Your server should maintain data integrity across multiple restarts.\n" +
 						"Ensure persistent storage remains consistent and uncorrupted.").
-					Check()
+					Run()
 			}
 
 			allHistoricalData := map[string]string{
@@ -88,7 +88,7 @@ func Persistence() *Suite {
 					Body(Is(expectedValue)).
 					Hint("Your server should preserve all historical data across restarts.\n" +
 						"Ensure no data corruption or loss occurs during persistence operations.").
-					Check()
+					Run()
 			}
 		}).
 
@@ -99,7 +99,7 @@ func Persistence() *Suite {
 					Status(Is(200)).
 					Hint("Your server should handle concurrent PUT requests under load.\n" +
 						"Ensure persistence works during high-traffic scenarios.").
-					Check()
+					Run()
 			})
 
 			do.Restart("n1")
@@ -110,7 +110,7 @@ func Persistence() *Suite {
 					Body(Is(fmt.Sprintf("value%d", i))).
 					Hint("Your server should persist all concurrent writes.\n" +
 						"Ensure thread-safe persistence and no data loss under load.").
-					Check()
+					Run()
 			}
 		})
 }

@@ -10,7 +10,7 @@ type config struct {
 	nodes               []string
 	nodeStartTimeout    time.Duration
 	nodeShutdownTimeout time.Duration
-	assertTimeout       time.Duration
+	retryTimeout       time.Duration
 	pollInterval        time.Duration
 	requestTimeout      time.Duration
 }
@@ -19,7 +19,7 @@ func defaultConfig() *config {
 	return &config{
 		nodeStartTimeout:    10 * time.Second,
 		nodeShutdownTimeout: 5 * time.Second,
-		assertTimeout:       5 * time.Second,
+		retryTimeout:       5 * time.Second,
 		pollInterval:        100 * time.Millisecond,
 		requestTimeout:      5 * time.Second,
 	}
@@ -63,10 +63,10 @@ func WithNodeShutdownTimeout(d time.Duration) Option {
 	}
 }
 
-// WithAssertTimeout sets the default timeout for Eventually and Consistently.
-func WithAssertTimeout(d time.Duration) Option {
+// WithRetryTimeout sets the default timeout for Eventually and Consistently.
+func WithRetryTimeout(d time.Duration) Option {
 	return func(c *config) {
-		c.assertTimeout = d
+		c.retryTimeout = d
 	}
 }
 

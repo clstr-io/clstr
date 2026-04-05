@@ -19,31 +19,31 @@ func CrashRecovery() *Suite {
 				Status(Is(200)).
 				Hint("Your server should accept PUT requests.\n" +
 					"Ensure your HTTP handler processes PUT requests correctly.").
-				Check()
+				Run()
 
 			do.PUT(Node("n1"), "/kv/wal:updated", "v1").
 				Status(Is(200)).
 				Hint("Your server should accept PUT requests.\n" +
 					"Ensure your HTTP handler processes PUT requests correctly.").
-				Check()
+				Run()
 
 			do.PUT(Node("n1"), "/kv/wal:updated", "v2").
 				Status(Is(200)).
 				Hint("Your server should allow overwriting existing keys.\n" +
 					"Ensure PUT requests update the value of existing keys.").
-				Check()
+				Run()
 
 			do.PUT(Node("n1"), "/kv/wal:deleted", "temporary").
 				Status(Is(200)).
 				Hint("Your server should accept PUT requests.\n" +
 					"Ensure your HTTP handler processes PUT requests correctly.").
-				Check()
+				Run()
 
 			do.DELETE(Node("n1"), "/kv/wal:deleted").
 				Status(Is(200)).
 				Hint("Your server should accept DELETE requests.\n" +
 					"Ensure your HTTP handler processes DELETE requests correctly.").
-				Check()
+				Run()
 
 			do.Restart("n1", syscall.SIGKILL)
 
@@ -53,20 +53,20 @@ func CrashRecovery() *Suite {
 				Hint("Your server acknowledged the PUT but lost the data after crashing.\n" +
 					"Implement a Write-Ahead Log (WAL) that records operations before applying them to memory.\n" +
 					"Ensure writes are durably stored (fsync/flush) before or when acknowledging to the client.").
-				Check()
+				Run()
 
 			do.GET(Node("n1"), "/kv/wal:updated").
 				Status(Is(200)).
 				Body(Is("v2")).
 				Hint("Your server should preserve updated values after crash.\n" +
 					"Ensure your WAL records all PUT operations, including updates to existing keys.").
-				Check()
+				Run()
 
 			do.GET(Node("n1"), "/kv/wal:deleted").
 				Status(Is(404)).
 				Hint("Your server should preserve deletion state after crash.\n" +
 					"Ensure your WAL records DELETE operations and replays them correctly during recovery.").
-				Check()
+				Run()
 		}).
 
 		// 2
@@ -79,7 +79,7 @@ func CrashRecovery() *Suite {
 					Status(Is(200)).
 					Hint("Your server should accept PUT requests.\n" +
 						"Ensure your HTTP handler processes PUT requests correctly.").
-					Check()
+					Run()
 
 				do.Restart("n1", syscall.SIGKILL)
 
@@ -88,7 +88,7 @@ func CrashRecovery() *Suite {
 					Body(Is(cycleValue)).
 					Hint("Your server should preserve data across crash/restart cycles.\n" +
 						"Ensure your WAL is append-only and recovery replays all operations correctly.").
-					Check()
+					Run()
 			}
 
 			allHistoricalData := map[string]string{
@@ -106,7 +106,7 @@ func CrashRecovery() *Suite {
 					Hint("Your server should preserve all historical data across multiple crashes.\n" +
 						"Ensure the WAL is never truncated until after a successful checkpoint.\n" +
 						"Recovery should load the latest snapshot (if any) and replay all subsequent WAL operations.").
-					Check()
+					Run()
 			}
 		}).
 
@@ -117,7 +117,7 @@ func CrashRecovery() *Suite {
 					Status(Is(200)).
 					Hint("Your server should accept PUT requests.\n" +
 						"Ensure your HTTP handler processes PUT requests correctly.").
-					Check()
+					Run()
 			}
 
 			do.Restart("n1", syscall.SIGKILL)
@@ -129,7 +129,7 @@ func CrashRecovery() *Suite {
 					Hint("Your server acknowledged the PUT but lost the data after crashing.\n" +
 						"Ensure writes are durably stored before acknowledging them to the client.\n" +
 						"Call fsync/flush after writing to WAL, or batch operations and sync before responding.").
-					Check()
+					Run()
 			}
 		}).
 
@@ -140,7 +140,7 @@ func CrashRecovery() *Suite {
 					Status(Is(200)).
 					Hint("Your server should handle concurrent PUT requests.\n" +
 						"Ensure thread-safety in your storage implementation.").
-					Check()
+					Run()
 			})
 
 			do.Restart("n1", syscall.SIGKILL)
@@ -152,7 +152,7 @@ func CrashRecovery() *Suite {
 					Hint("Your server should preserve all acknowledged writes after crash.\n" +
 						"Ensure your WAL writes are thread-safe and durably stored before acknowledging.\n" +
 						"If recovery is slow, consider implementing checkpointing to reduce replay time.").
-					Check()
+					Run()
 			}
 		})
 }
