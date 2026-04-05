@@ -278,19 +278,58 @@ func (a *Assertion) verify() {
 
 	if total > 1 {
 		var desc string
+		var relevant []result
 		switch a.selector.kind {
 		case nodeExactlyOne:
-			desc = fmt.Sprintf("exactly 1 node to satisfy, %d did", passed)
+			desc = fmt.Sprintf("Exactly 1 node to satisfy, %d did", passed)
+			if passed == 0 {
+				relevant = a.results
+			} else {
+				for _, r := range a.results {
+					if r.passed {
+						relevant = append(relevant, r)
+					}
+				}
+			}
 		case nodeAtLeastOne:
-			desc = "at least 1 node to satisfy, 0 did"
+			desc = "At least 1 node to satisfy, 0 did"
+			relevant = a.results
 		case nodeAll:
-			desc = fmt.Sprintf("all %d nodes to satisfy, %d did not", total, total-passed)
+			desc = fmt.Sprintf("All %d nodes to satisfy, %d did not", total, total-passed)
+			for _, r := range a.results {
+				if !r.passed {
+					relevant = append(relevant, r)
+				}
+			}
 		}
 
-		panic(fmt.Sprintf("%s - expected %s%s", a.method, desc, formatHelp()))
+		var details strings.Builder
+		for _, r := range relevant {
+			details.WriteString("\n  ")
+			details.WriteString(formatResult(r))
+		}
+
+		panic(fmt.Sprintf("%s - expected %s%s%s", a.method, desc, details.String(), formatHelp()))
 	}
 
 	a.reportFailure(a.results[0], formatHelp)
+}
+
+func formatResult(r result) string {
+	if r.err != nil {
+		if errors.Is(r.err, context.DeadlineExceeded) {
+			return fmt.Sprintf("%s → timed out", r.url)
+		}
+
+		return fmt.Sprintf("%s → %s", r.url, r.err.Error())
+	}
+
+	body := r.body
+	if len(body) > 100 {
+		body = body[:100] + "..."
+	}
+
+	return fmt.Sprintf("%s → %d %s", r.url, r.status, body)
 }
 
 func (a *Assertion) reportFailure(r result, formatHelp func() string) {
