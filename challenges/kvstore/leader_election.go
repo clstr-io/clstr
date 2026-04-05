@@ -159,18 +159,37 @@ func LeaderElection() *Suite {
 		}).
 
 		// 6
-		Test("Follower Redirects to Leader", func(do *Do) {
+		Test("Followers Redirect to Leader", func(do *Do) {
 			followerNode := findFollower(do)
 			if followerNode == "" {
 				panic("No follower node found.")
 			}
 
+			leaderAddr := do.Fetch(followerNode, "/cluster/info").JSON("leader")
+			if leaderAddr == "" {
+				panic(fmt.Sprintf("Follower %s does not know the leader address.", followerNode))
+			}
+
+			hint := "Followers should redirect all requests to the leader.\n" +
+				"Return HTTP 307 Temporary Redirect with a Location header pointing to\n" +
+				"the leader's address: http://" + leaderAddr + "/kv/foo"
+
+			do.GET(Node(followerNode), "/kv/foo").
+				Status(Is(307)).
+				Header("Location", Is("http://"+leaderAddr+"/kv/foo")).
+				Hint(hint).
+				Run()
+
 			do.PUT(Node(followerNode), "/kv/foo", "value").
 				Status(Is(307)).
-				Header("Location", Matches(`^http://10\.0\.42\.\d+:\d+/kv/foo$`)).
-				Hint("Followers should redirect write requests to the leader.\n" +
-					"Return HTTP 307 Temporary Redirect with a Location header pointing to\n" +
-					"the leader's address: http://10.0.42.X:<port>/kv/foo").
+				Header("Location", Is("http://"+leaderAddr+"/kv/foo")).
+				Hint(hint).
+				Run()
+
+			do.DELETE(Node(followerNode), "/kv/foo").
+				Status(Is(307)).
+				Header("Location", Is("http://"+leaderAddr+"/kv/foo")).
+				Hint(hint).
 				Run()
 		}).
 

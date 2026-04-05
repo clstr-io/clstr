@@ -4,6 +4,6 @@ import (
 	. "github.com/clstr-io/clstr/internal/attest"
 )
 
-func FaultTolerance() *Suite {
+func JointConsensus() *Suite {
 	return New()
 }

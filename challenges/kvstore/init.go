@@ -13,9 +13,9 @@ func init() {
 	challenge.AddStage("crash-recovery", "Data Survives SIGKILL", CrashRecovery)
 	challenge.AddStage("leader-election", "Cluster Elects and Maintains Leader", LeaderElection)
 	challenge.AddStage("log-replication", "Data Replicates to All Nodes", LogReplication)
-	challenge.AddStage("membership-changes", "Add and Remove Nodes Dynamically", MembershipChanges)
-	challenge.AddStage("fault-tolerance", "Cluster Survives Failures and Partitions", FaultTolerance)
 	challenge.AddStage("log-compaction", "System Manages Log Growth", LogCompaction)
+	challenge.AddStage("membership-changes", "Add and Remove Nodes One at a Time", MembershipChanges)
+	challenge.AddStage("joint-consensus", "Add and Remove Nodes in Bulk", JointConsensus)
 
 	registry.RegisterChallenge("kv-store", challenge)
 }
