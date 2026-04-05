@@ -40,7 +40,7 @@ func findFollower(do *Do) string {
 func LeaderElection() *Suite {
 	return New(
 		WithCluster(5),
-		WithAssertTimeout(3*time.Second),
+		WithRetryTimeout(3*time.Second),
 	).
 
 		// 1
@@ -52,7 +52,7 @@ func LeaderElection() *Suite {
 				Hint("No leader elected after 2 seconds.\n" +
 					"Implement RequestVote RPC - candidates must request votes from all peers.\n" +
 					"A candidate becomes leader once it receives votes from a majority (3 of 5).").
-				Check()
+				Run()
 		}).
 
 		// 2
@@ -64,7 +64,7 @@ func LeaderElection() *Suite {
 				Hint("Expected exactly one leader (found 0 or more than 1).\n" +
 					"Each node must grant at most one vote per term.\n" +
 					"A candidate must step down if it discovers a higher term.").
-				Check()
+				Run()
 		}).
 
 		// 3
@@ -84,7 +84,7 @@ func LeaderElection() *Suite {
 				Hint("Expected exactly one new leader (found 0 or more than 1).\n" +
 					"If no leader: ensure followers start an election when heartbeats stop.\n" +
 					"If multiple leaders: each node must grant at most one vote per term.").
-				Check()
+				Run()
 
 			do.GET(do.AllNodes(), "/cluster/info").
 				Eventually(2*time.Second).
@@ -92,7 +92,7 @@ func LeaderElection() *Suite {
 				JSON("term", GreaterThan(initialTerm)).
 				Hint(fmt.Sprintf("Term should increment after a new election (was %s).\n"+
 					"Candidates must increment currentTerm before starting an election.", initialTerm)).
-				Check()
+				Run()
 
 			do.Start(prevLeaderNode)
 
@@ -103,7 +103,7 @@ func LeaderElection() *Suite {
 				JSON("role", Is("follower")).
 				Hint(fmt.Sprintf("Restarted node should catch up to the current term (was %s) and become a follower.\n"+
 					"The leader's heartbeats will update the rejoining node's term.", initialTerm)).
-				Check()
+				Run()
 		}).
 
 		// 4
@@ -123,7 +123,7 @@ func LeaderElection() *Suite {
 				JSON("term", Is(initialTerm)).
 				Hint("Leader changed during steady state - heartbeats may not be working.\n" +
 					"Send empty AppendEntries RPCs every 100ms to prevent followers from timing out.").
-				Check()
+				Run()
 		}).
 
 		// 5
@@ -139,7 +139,7 @@ func LeaderElection() *Suite {
 				Hint("Followers should redirect write requests to the leader.\n" +
 					"Return HTTP 307 Temporary Redirect with a Location header pointing to\n" +
 					"the leader's address: http://10.0.42.X:<port>/kv/foo").
-				Check()
+				Run()
 		}).
 
 		// 6
@@ -156,7 +156,7 @@ func LeaderElection() *Suite {
 				Status(Is(503)).
 				Hint("When no leader is known, return 503 Service Unavailable.\n" +
 					"Clear the known-leader state when contact with the leader is lost.").
-				Check()
+				Run()
 
 			do.Start(prevLeaderNode)
 		}).
@@ -172,7 +172,7 @@ func LeaderElection() *Suite {
 				Hint("Expected exactly one leader in the majority partition (found 0 or more than 1).\n" +
 					"If no leader: the 3-node partition has quorum and should elect a leader.\n" +
 					"If multiple leaders: each node must grant at most one vote per term.").
-				Check()
+				Run()
 
 			do.GET(do.AllNodes("n1", "n2"), "/cluster/info").
 				Consistently(2*time.Second).
@@ -180,12 +180,21 @@ func LeaderElection() *Suite {
 				JSON("leader", IsNull[string]()).
 				Hint("The minority partition (2 of 5) must not elect a leader.\n" +
 					"A candidate needs votes from at least 3 nodes; with only 2 reachable, no election can succeed.").
-				Check()
+				Run()
 		}).
 
 		// 8
 		Test("Cluster Converges After Partition Heals", func(do *Do) {
 			do.Heal()
+
+			do.GET(do.AtLeastOneNode(), "/cluster/info").
+				Eventually(2*time.Second).
+				Status(Is(200)).
+				JSON("role", Is("leader")).
+				Hint("No leader elected after partition healed.\n" +
+					"Once the partition heals, the majority partition's leader should remain\n" +
+					"or a new election should complete quickly.").
+				Run()
 
 			leaderNode := findLeader(do)
 			if leaderNode == "" {
@@ -204,6 +213,6 @@ func LeaderElection() *Suite {
 				Hint("After healing, all nodes should converge on the same leader.\n" +
 					"When a node receives an AppendEntries or RequestVote with a higher term,\n" +
 					"it must immediately revert to follower and update its term.").
-				Check()
+				Run()
 		})
 }
