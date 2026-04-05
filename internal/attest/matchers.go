@@ -138,7 +138,7 @@ func (m patternMatcher) Check(actual string) bool {
 }
 
 func (m patternMatcher) Expected() string {
-	return fmt.Sprintf("matching pattern %q", m.raw)
+	return fmt.Sprintf("matching pattern /%s/", m.raw)
 }
 
 // hasLenMatcher validates that a value has a specific length.
@@ -250,7 +250,7 @@ func (m JSONFieldMatcher) Check(actual string) bool {
 }
 
 func (m JSONFieldMatcher) Expected() string {
-	return fmt.Sprintf("field %s: %s", m.path, m.matcher.Expected())
+	return fmt.Sprintf("field %q: %s", m.path, m.matcher.Expected())
 }
 
 // checkAll returns true if all matchers pass for the given value.
