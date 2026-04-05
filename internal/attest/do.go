@@ -71,18 +71,12 @@ func (do *Do) startCluster(names ...string) {
 			}
 		}
 
-		mappedPort, err := freePort()
-		if err != nil {
-			panic(fmt.Sprintf("assign port for %q: %v", name, err))
-		}
-
 		containerName := "clstr-" + do.config.challengeKey + "-" + name
 		node := &containerNode{
-			name:       containerName,
-			imageTag:   "clstr-" + do.config.challengeKey,
-			ip:         ips[name],
-			mappedPort: mappedPort,
-			peers:      peers,
+			name:     containerName,
+			imageTag: "clstr-" + do.config.challengeKey,
+			ip:       ips[name],
+			peers:    peers,
 		}
 
 		do.nodes.Set(name, node)
