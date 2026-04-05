@@ -98,6 +98,12 @@ func (n *containerNode) IsAlive() bool {
 func (n *containerNode) Start(ctx context.Context) error {
 	exec.CommandContext(ctx, "docker", "rm", "-f", n.name).Run()
 
+	port, err := freePort()
+	if err != nil {
+		return fmt.Errorf("assign port for %q: %w", n.name, err)
+	}
+	n.mappedPort = port
+
 	args := []string{
 		"run", "-d",
 		"--name", n.name,
