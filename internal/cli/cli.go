@@ -32,15 +32,15 @@ func createChallengeFiles(challenge *registry.Challenge, targetPath, lang string
 		return fmt.Errorf("Failed to create README.md: %w", err)
 	}
 
-	// clstr.state
+	// clstr.yaml
 	cfg := &state.State{
 		Challenge: challenge.Key,
 		Stage:     challenge.StageOrder[0],
 	}
-	statePath := filepath.Join(targetPath, "clstr.state")
+	statePath := filepath.Join(targetPath, "clstr.yaml")
 	err = state.SaveTo(cfg, statePath)
 	if err != nil {
-		return fmt.Errorf("Failed to create clstr.state: %w", err)
+		return fmt.Errorf("Failed to create clstr.yaml: %w", err)
 	}
 
 	// .gitignore
@@ -106,7 +106,7 @@ func InitChallenge(ctx context.Context, cmd *commands.Command) error {
 
 	fmt.Println("  Dockerfile      - Build and run your server in a container")
 	fmt.Println("  README.md      - Challenge overview and requirements")
-	fmt.Println("  clstr.state    - Tracks your progress")
+	fmt.Println("  clstr.yaml     - Tracks your progress")
 	fmt.Println("  .gitignore     - Files to .gitignore")
 	fmt.Println()
 
