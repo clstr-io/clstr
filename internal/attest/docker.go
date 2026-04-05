@@ -112,9 +112,9 @@ func (n *containerNode) Start(ctx context.Context) error {
 		"--cap-add", "NET_ADMIN",
 		"-p", fmt.Sprintf("%d:%d", n.mappedPort, containerPort),
 		"-v", fmt.Sprintf("%s:/app/data", n.name+"-data"),
+		"-e", "DATA_DIR=/app/data",
+		"-e", fmt.Sprintf("PEERS=%s", strings.Join(n.peers, ",")),
 		n.imageTag,
-		"--data-dir=/app/data",
-		fmt.Sprintf("--peers=%s", strings.Join(n.peers, ",")),
 	}
 
 	out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
