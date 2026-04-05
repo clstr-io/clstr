@@ -60,7 +60,7 @@ func (do *Do) startCluster(names ...string) {
 
 	ips := make(map[string]string, len(names))
 	for i, name := range names {
-		ips[name] = fmt.Sprintf("10.0.42.%d", i+2)
+		ips[name] = fmt.Sprintf("10.0.42.%d", i+101)
 	}
 
 	for _, name := range names {
