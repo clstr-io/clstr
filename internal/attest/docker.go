@@ -113,6 +113,7 @@ func (n *containerNode) Start(ctx context.Context) error {
 		"-p", fmt.Sprintf("%d:%d", n.mappedPort, containerPort),
 		"-v", fmt.Sprintf("%s:/app/data", n.name+"-data"),
 		"-e", "DATA_DIR=/app/data",
+		"-e", fmt.Sprintf("ADDR=%s:%d", n.ip, containerPort),
 		"-e", fmt.Sprintf("PEERS=%s", strings.Join(n.peers, ",")),
 		n.imageTag,
 	}
