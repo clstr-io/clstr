@@ -61,17 +61,17 @@ func LeaderElection() *Suite {
 				Consistently(2*time.Second).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
-				Hint("More than one node reported role=leader simultaneously.\n" +
+				Hint("Expected exactly one leader (found 0 or more than 1).\n" +
 					"Each node must grant at most one vote per term.\n" +
 					"A candidate must step down if it discovers a higher term.").
 				Check()
 		}).
 
 		// 3
-		Test("Terms Increment After Leader Crash", func(do *Do) {
+		Test("New Leader Elected After Leader Crash", func(do *Do) {
 			prevLeaderNode := findLeader(do)
 			if prevLeaderNode == "" {
-				panic("no leader found")
+				panic("No leader node found.")
 			}
 
 			initialTerm := do.Fetch(prevLeaderNode, "/cluster/info").JSON("term")
@@ -81,8 +81,9 @@ func LeaderElection() *Suite {
 				Eventually(2*time.Second).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
-				Hint("After killing the leader, a new leader should be elected.\n" +
-					"Ensure followers start an election when heartbeats stop.").
+				Hint("Expected exactly one new leader (found 0 or more than 1).\n" +
+					"If no leader: ensure followers start an election when heartbeats stop.\n" +
+					"If multiple leaders: each node must grant at most one vote per term.").
 				Check()
 
 			do.GET(do.AllNodes(), "/cluster/info").
@@ -109,7 +110,7 @@ func LeaderElection() *Suite {
 		Test("Leader Maintains Authority via Heartbeats", func(do *Do) {
 			leaderNode := findLeader(do)
 			if leaderNode == "" {
-				panic("no leader found")
+				panic("No leader node found.")
 			}
 
 			initialTerm := do.Fetch(leaderNode, "/cluster/info").JSON("term")
@@ -129,7 +130,7 @@ func LeaderElection() *Suite {
 		Test("Follower Redirects to Leader", func(do *Do) {
 			followerNode := findFollower(do)
 			if followerNode == "" {
-				panic("no follower found")
+				panic("No follower node found.")
 			}
 
 			do.PUT(Node(followerNode), "/kv/foo", "value").
@@ -145,7 +146,7 @@ func LeaderElection() *Suite {
 		Test("Service Unavailable During Election", func(do *Do) {
 			prevLeaderNode := findLeader(do)
 			if prevLeaderNode == "" {
-				panic("no leader found")
+				panic("No leader node found.")
 			}
 
 			do.Kill(prevLeaderNode)
@@ -168,7 +169,9 @@ func LeaderElection() *Suite {
 				Eventually(2*time.Second).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
-				Hint("The majority partition (3 of 5 nodes) should elect exactly one leader.").
+				Hint("Expected exactly one leader in the majority partition (found 0 or more than 1).\n" +
+					"If no leader: the 3-node partition has quorum and should elect a leader.\n" +
+					"If multiple leaders: each node must grant at most one vote per term.").
 				Check()
 
 			do.GET(do.AllNodes("n1", "n2"), "/cluster/info").
@@ -187,7 +190,7 @@ func LeaderElection() *Suite {
 
 			leaderNode := findLeader(do)
 			if leaderNode == "" {
-				panic("no leader found")
+				panic("No leader node found.")
 			}
 
 			info := do.Fetch(leaderNode, "/cluster/info")
