@@ -179,8 +179,7 @@ func LeaderElection() *Suite {
 				Status(Is(200)).
 				JSON("leader", IsNull[string]()).
 				Hint("The minority partition (2 of 5) must not elect a leader.\n" +
-					"A candidate needs votes from at least 3 nodes - with only 2 reachable\n" +
-					"no election can succeed.").
+					"A candidate needs votes from at least 3 nodes; with only 2 reachable, no election can succeed.").
 				Check()
 		}).
 
