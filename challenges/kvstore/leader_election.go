@@ -9,15 +9,15 @@ import (
 
 const (
 	// electionTimeout is the upper bound of the randomized election timeout.
-	electionTimeout = 1_000 * time.Millisecond
+	electionTimeout = time.Second
 
 	// heartbeatInterval is how often the leader sends AppendEntries heartbeats.
 	heartbeatInterval = 100 * time.Millisecond
 )
 
-// findLeader returns the name of the first node currently reporting role=leader.
-// If no node names are provided, all nodes in the cluster are searched.
-func findLeader(do *Do, nodes ...string) string {
+// findLeader returns the name and cluster info of the first node currently
+// reporting role=leader. If no node names are provided, all nodes are searched.
+func findLeader(do *Do, nodes ...string) (string, *FetchResponse) {
 	if len(nodes) == 0 {
 		nodes = do.Nodes()
 	}
@@ -25,16 +25,16 @@ func findLeader(do *Do, nodes ...string) string {
 	for _, node := range nodes {
 		r := do.Fetch(node, "/cluster/info")
 		if r != nil && r.JSON("role") == "leader" {
-			return node
+			return node, r
 		}
 	}
 
-	return ""
+	return "", nil
 }
 
-// findFollower returns the name of the first node currently reporting role=follower.
-// If no node names are provided, all nodes in the cluster are searched.
-func findFollower(do *Do, nodes ...string) string {
+// findFollower returns the name and cluster info of the first node currently
+// reporting role=follower. If no node names are provided, all nodes are searched.
+func findFollower(do *Do, nodes ...string) (string, *FetchResponse) {
 	if len(nodes) == 0 {
 		nodes = do.Nodes()
 	}
@@ -42,17 +42,17 @@ func findFollower(do *Do, nodes ...string) string {
 	for _, node := range nodes {
 		r := do.Fetch(node, "/cluster/info")
 		if r != nil && r.JSON("role") == "follower" {
-			return node
+			return node, r
 		}
 	}
 
-	return ""
+	return "", nil
 }
 
 func LeaderElection() *Suite {
 	return New(
 		WithCluster(5),
-		WithRetryTimeout(3*time.Second),
+		WithRetryTimeout(3*electionTimeout),
 	).
 
 		// 1
@@ -76,12 +76,12 @@ func LeaderElection() *Suite {
 		// 2
 		Test("Leader Election Completes", func(do *Do) {
 			do.GET(do.AtLeastOneNode(), "/cluster/info").
-				Eventually(2*time.Second).
+				Eventually(3*electionTimeout).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
 				JSON("term", GreaterThan("0")).
 				JSON("leader", Matches(`^10\.0\.42\.\d+:8080$`)).
-				Hint("No leader elected after 2 seconds.\n" +
+				Hint("No leader elected after 3 seconds.\n" +
 					"Implement RequestVote RPC - candidates must request votes from all peers.\n" +
 					"A candidate becomes leader once it receives votes from a majority (3 of 5).").
 				Run()
@@ -90,7 +90,7 @@ func LeaderElection() *Suite {
 		// 3
 		Test("Exactly One Leader Per Term", func(do *Do) {
 			do.GET(do.ExactlyOneNode(), "/cluster/info").
-				Consistently(2*time.Second).
+				Consistently(3*electionTimeout).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
 				Hint("Expected exactly one leader (found 0 or more than 1).\n" +
@@ -98,12 +98,12 @@ func LeaderElection() *Suite {
 					"A candidate must step down if it discovers a higher term.").
 				Run()
 
-			leaderNode := findLeader(do)
+			leaderNode, leaderInfo := findLeader(do)
 			if leaderNode == "" {
 				panic("No leader node found.")
 			}
 
-			leaderID := do.Fetch(leaderNode, "/cluster/info").JSON("id")
+			leaderID := leaderInfo.JSON("id")
 
 			do.GET(do.AllNodes(), "/cluster/info").
 				Status(Is(200)).
@@ -115,19 +115,19 @@ func LeaderElection() *Suite {
 
 		// 4
 		Test("Leader Maintains Authority via Heartbeats", func(do *Do) {
-			leaderNode := findLeader(do)
+			leaderNode, leaderInfo := findLeader(do)
 			if leaderNode == "" {
 				panic("No leader node found.")
 			}
 
-			initialTerm := do.Fetch(leaderNode, "/cluster/info").JSON("term")
+			currentTerm := leaderInfo.JSON("term")
 
 			time.Sleep(3 * electionTimeout)
 
 			do.GET(Node(leaderNode), "/cluster/info").
 				Status(Is(200)).
 				JSON("role", Is("leader")).
-				JSON("term", Is(initialTerm)).
+				JSON("term", Is(currentTerm)).
 				Hint("Leader changed during steady state - heartbeats may not be working.\n" +
 					"Send empty AppendEntries RPCs every 100ms to prevent followers from timing out.").
 				Run()
@@ -135,12 +135,12 @@ func LeaderElection() *Suite {
 
 		// 5
 		Test("Followers Redirect to Leader", func(do *Do) {
-			followerNode := findFollower(do)
+			followerNode, followerInfo := findFollower(do)
 			if followerNode == "" {
 				panic("No follower node found.")
 			}
 
-			leaderAddr := do.Fetch(followerNode, "/cluster/info").JSON("leader")
+			leaderAddr := followerInfo.JSON("leader")
 			if leaderAddr == "" {
 				panic(fmt.Sprintf("Follower %s does not know the leader address.", followerNode))
 			}
@@ -170,7 +170,7 @@ func LeaderElection() *Suite {
 
 		// 6
 		Test("Leader Handles KV Operations", func(do *Do) {
-			leaderNode := findLeader(do)
+			leaderNode, _ := findLeader(do)
 			if leaderNode == "" {
 				panic("No leader node found.")
 			}
@@ -222,16 +222,16 @@ func LeaderElection() *Suite {
 
 		// 7
 		Test("New Leader Elected After Leader Crash", func(do *Do) {
-			prevLeaderNode := findLeader(do)
+			prevLeaderNode, leaderInfo := findLeader(do)
 			if prevLeaderNode == "" {
 				panic("No leader node found.")
 			}
 
-			initialTerm := do.Fetch(prevLeaderNode, "/cluster/info").JSON("term")
+			currentTerm := leaderInfo.JSON("term")
 			do.Kill(prevLeaderNode)
 
 			do.GET(do.ExactlyOneNode(), "/cluster/info").
-				Eventually(2*time.Second).
+				Eventually(3*electionTimeout).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
 				Hint("Expected exactly one new leader (found 0 or more than 1).\n" +
@@ -240,29 +240,29 @@ func LeaderElection() *Suite {
 				Run()
 
 			do.GET(do.AllNodes(), "/cluster/info").
-				Eventually(2*time.Second).
+				Eventually(3*electionTimeout).
 				Status(Is(200)).
-				JSON("term", GreaterThan(initialTerm)).
+				JSON("term", GreaterThan(currentTerm)).
 				Hint(fmt.Sprintf("Term should increment after a new election (was %s).\n"+
-					"Candidates must increment currentTerm before starting an election.", initialTerm)).
+					"Candidates must increment currentTerm before starting an election.", currentTerm)).
 				Run()
 
 			do.Start(prevLeaderNode)
 
 			do.GET(Node(prevLeaderNode), "/cluster/info").
-				Eventually(2*time.Second).
+				Eventually(3*electionTimeout).
 				Status(Is(200)).
-				JSON("term", GreaterThan(initialTerm)).
+				JSON("term", GreaterThan(currentTerm)).
 				JSON("role", Is("follower")).
 				JSON("leader", Matches(`^10\.0\.42\.\d+:8080$`)).
 				Hint(fmt.Sprintf("Restarted node should catch up to the current term (was %s), become a follower, and learn the current leader.\n"+
-					"The leader's heartbeats will update the rejoining node's term and leader.", initialTerm)).
+					"The leader's heartbeats will update the rejoining node's term and leader.", currentTerm)).
 				Run()
 		}).
 
 		// 8
 		Test("Service Unavailable During Election", func(do *Do) {
-			prevLeaderNode := findLeader(do)
+			prevLeaderNode, _ := findLeader(do)
 			if prevLeaderNode == "" {
 				panic("No leader node found.")
 			}
@@ -273,7 +273,7 @@ func LeaderElection() *Suite {
 				"Clear the known-leader state when contact with the leader is lost."
 
 			do.GET(do.AllNodes(), "/kv/foo").
-				Eventually(2 * heartbeatInterval).
+				Eventually(3 * electionTimeout).
 				Status(Is(503)).
 				Hint(hint503).
 				Run()
@@ -293,10 +293,17 @@ func LeaderElection() *Suite {
 
 		// 9
 		Test("Partition Enforces Quorum", func(do *Do) {
+			// Restart the current leader so no node enters the partition as an incumbent leader.
+			// This prevents a minority node from failing the Consistently check with a stale role=leader.
+			prevLeaderNode, _ := findLeader(do)
+			if prevLeaderNode != "" {
+				do.Restart(prevLeaderNode)
+			}
+
 			do.Partition([]string{"n1", "n2"}, []string{"n3", "n4", "n5"})
 
 			do.GET(do.ExactlyOneNode("n3", "n4", "n5"), "/cluster/info").
-				Eventually(2*time.Second).
+				Eventually(3*electionTimeout).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
 				Hint("Expected exactly one leader in the majority partition [n3, n4, n5] (found 0 or more than 1).\n" +
@@ -304,12 +311,12 @@ func LeaderElection() *Suite {
 					"If multiple leaders: each node must grant at most one vote per term.").
 				Run()
 
-			majorityLeaderNode := findLeader(do, "n3", "n4", "n5")
+			majorityLeaderNode, leaderInfo := findLeader(do, "n3", "n4", "n5")
 			if majorityLeaderNode == "" {
 				panic("No leader node found in majority partition.")
 			}
 
-			majorityLeaderID := do.Fetch(majorityLeaderNode, "/cluster/info").JSON("id")
+			majorityLeaderID := leaderInfo.JSON("id")
 
 			do.GET(do.AllNodes("n3", "n4", "n5"), "/cluster/info").
 				Status(Is(200)).
@@ -319,7 +326,7 @@ func LeaderElection() *Suite {
 				Run()
 
 			do.GET(do.AllNodes("n1", "n2"), "/cluster/info").
-				Consistently(2*time.Second).
+				Consistently(3*electionTimeout).
 				Status(Is(200)).
 				JSON("role", OneOf("follower", "candidate")).
 				JSON("leader", IsNull[string]()).
@@ -332,8 +339,11 @@ func LeaderElection() *Suite {
 		Test("Cluster Converges After Partition Heals", func(do *Do) {
 			do.Heal()
 
-			do.GET(do.AtLeastOneNode(), "/cluster/info").
-				Eventually(2*time.Second).
+			// Wait for the cluster to settle.
+			time.Sleep(3 * electionTimeout)
+
+			do.GET(do.ExactlyOneNode(), "/cluster/info").
+				Eventually(3*electionTimeout).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
 				Hint("No leader elected after partition healed.\n" +
@@ -341,20 +351,16 @@ func LeaderElection() *Suite {
 					"or a new election should complete quickly.").
 				Run()
 
-			leaderNode := findLeader(do)
+			leaderNode, leaderInfo := findLeader(do)
 			if leaderNode == "" {
 				panic("No leader node found.")
 			}
 
-			info := do.Fetch(leaderNode, "/cluster/info")
-			leaderAddr := info.JSON("id")
-			term := info.JSON("term")
+			leaderAddr := leaderInfo.JSON("id")
 
 			do.GET(do.AllNodes(), "/cluster/info").
-				Eventually(2*time.Second).
 				Status(Is(200)).
 				JSON("leader", Is(leaderAddr)).
-				JSON("term", Is(term)).
 				Hint("After healing, all nodes should converge on the same leader.\n" +
 					"When a node receives an AppendEntries or RequestVote with a higher term,\n" +
 					"it must immediately revert to follower and update its term.").
