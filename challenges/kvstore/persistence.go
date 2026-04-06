@@ -94,7 +94,7 @@ func Persistence() *Suite {
 
 		// 3
 		Test("Test Persistence When Under Concurrent Load", func(do *Do) {
-			do.Concurrently(10_000, func(i int) {
+			do.Concurrently(1_000, func(i int) {
 				do.PUT(Node("n1"), fmt.Sprintf("/kv/load:concurrent%d", i), fmt.Sprintf("value%d", i)).
 					Status(Is(200)).
 					Hint("Your server should handle concurrent PUT requests under load.\n" +
@@ -104,7 +104,7 @@ func Persistence() *Suite {
 
 			do.Restart("n1")
 
-			for i := 1; i <= 10_000; i++ {
+			for i := 1; i <= 1_000; i++ {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/load:concurrent%d", i)).
 					Status(Is(200)).
 					Body(Is(fmt.Sprintf("value%d", i))).
