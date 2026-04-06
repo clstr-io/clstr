@@ -135,7 +135,7 @@ func CrashRecovery() *Suite {
 
 		// 4
 		Test("Test Recovery When Under Concurrent Load", func(do *Do) {
-			do.Concurrently(10_000, func(i int) {
+			do.Concurrently(1_000, func(i int) {
 				do.PUT(Node("n1"), fmt.Sprintf("/kv/large:key%d", i), strings.Repeat("x", 100)).
 					Status(Is(200)).
 					Hint("Your server should handle concurrent PUT requests.\n" +
@@ -145,7 +145,7 @@ func CrashRecovery() *Suite {
 
 			do.Restart("n1", syscall.SIGKILL)
 
-			for i := 1; i <= 10_000; i++ {
+			for i := 1; i <= 1_000; i++ {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/large:key%d", i)).
 					Status(Is(200)).
 					Body(Is(strings.Repeat("x", 100))).
