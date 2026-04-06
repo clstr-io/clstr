@@ -138,7 +138,8 @@ func (m patternMatcher) Check(actual string) bool {
 }
 
 func (m patternMatcher) Expected() string {
-	return fmt.Sprintf("matching pattern /%s/", m.raw)
+	display := strings.NewReplacer("\n", `\n`, "\r", `\r`, "\t", `\t`).Replace(m.raw)
+	return fmt.Sprintf("matching pattern /%s/", display)
 }
 
 // hasLenMatcher validates that a value has a specific length.

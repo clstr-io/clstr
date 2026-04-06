@@ -56,7 +56,7 @@ func LeaderElection() *Suite {
 	).
 
 		// 1
-		Test("Cluster Info Returns Pre-Election State", func(do *Do) {
+		Test("/cluster/info Returns Pre-Election State", func(do *Do) {
 			do.GET(do.AllNodes(), "/cluster/info").
 				Status(Is(200)).
 				JSON("id", Matches(`^10\.0\.42\.\d+:8080$`)).
@@ -166,20 +166,61 @@ func LeaderElection() *Suite {
 				Header("Location", Is("http://"+leaderAddr+"/kv/foo")).
 				Hint(hint307).
 				Run()
+		}).
 
+		// 6
+		Test("Leader Handles KV Operations", func(do *Do) {
 			leaderNode := findLeader(do)
 			if leaderNode == "" {
 				panic("No leader node found.")
 			}
 
-			do.GET(Node(leaderNode), "/kv/foo").
-				Status(Not(Is(307))).
-				Hint("The leader should not redirect requests to itself.\n" +
-					"Only redirect when role is follower or candidate.").
+			do.PUT(Node(leaderNode), "/kv/leader:key", "initial").
+				Status(Is(200)).
+				Hint("The leader should accept PUT requests.\n" +
+					"Ensure your leader node processes write operations.").
+				Run()
+
+			do.GET(Node(leaderNode), "/kv/leader:key").
+				Status(Is(200)).
+				Body(Is("initial")).
+				Hint("The leader should return stored values.\n" +
+					"Ensure your leader node processes read operations.").
+				Run()
+
+			do.PUT(Node(leaderNode), "/kv/leader:key", "updated").
+				Status(Is(200)).
+				Hint("The leader should allow overwriting existing keys.\n" +
+					"Ensure PUT requests update the value of existing keys.").
+				Run()
+
+			do.GET(Node(leaderNode), "/kv/leader:key").
+				Status(Is(200)).
+				Body(Is("updated")).
+				Hint("The leader should return the most recently written value.\n" +
+					"Ensure overwrite operations update the stored value correctly.").
+				Run()
+
+			do.DELETE(Node(leaderNode), "/kv/leader:key").
+				Status(Is(200)).
+				Hint("The leader should accept DELETE requests.\n" +
+					"Ensure your leader node processes delete operations.").
+				Run()
+
+			do.GET(Node(leaderNode), "/kv/leader:key").
+				Status(Is(404)).
+				Hint("The leader should return 404 after a key is deleted.\n" +
+					"Ensure delete operations are applied correctly.").
+				Run()
+
+			do.DELETE(Node(leaderNode), "/clear").
+				Status(Is(200)).
+				Hint("The leader should accept CLEAR requests.\n" +
+					"Ensure your leader node processes the /clear endpoint.").
 				Run()
 		}).
 
-		// 6
+		// 7
 		Test("New Leader Elected After Leader Crash", func(do *Do) {
 			prevLeaderNode := findLeader(do)
 			if prevLeaderNode == "" {
@@ -219,7 +260,7 @@ func LeaderElection() *Suite {
 				Run()
 		}).
 
-		// 7
+		// 8
 		Test("Service Unavailable During Election", func(do *Do) {
 			prevLeaderNode := findLeader(do)
 			if prevLeaderNode == "" {
@@ -250,7 +291,7 @@ func LeaderElection() *Suite {
 			do.Start(prevLeaderNode)
 		}).
 
-		// 8
+		// 9
 		Test("Partition Enforces Quorum", func(do *Do) {
 			do.Partition([]string{"n1", "n2"}, []string{"n3", "n4", "n5"})
 
@@ -287,7 +328,7 @@ func LeaderElection() *Suite {
 				Run()
 		}).
 
-		// 9
+		// 10
 		Test("Cluster Converges After Partition Heals", func(do *Do) {
 			do.Heal()
 

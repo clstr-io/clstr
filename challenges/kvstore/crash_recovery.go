@@ -14,7 +14,7 @@ func CrashRecovery() *Suite {
 	).
 
 		// 1
-		Test("Basic WAL Durability", func(do *Do) {
+		Test("Data Survives a Hard Crash", func(do *Do) {
 			do.PUT(Node("n1"), "/kv/wal:basic", "initial").
 				Status(Is(200)).
 				Hint("Your server should accept PUT requests.\n" +
@@ -70,7 +70,7 @@ func CrashRecovery() *Suite {
 		}).
 
 		// 2
-		Test("Multiple Crash Recovery Cycles", func(do *Do) {
+		Test("All Data Survives Repeated Hard Crashes", func(do *Do) {
 			for cycle := 1; cycle <= 4; cycle++ {
 				cycleKey := fmt.Sprintf("cycle:crash_%d", cycle)
 				cycleValue := fmt.Sprintf("crash_data_%d", cycle)
@@ -111,7 +111,7 @@ func CrashRecovery() *Suite {
 		}).
 
 		// 3
-		Test("Rapid Write Burst Before Crash", func(do *Do) {
+		Test("Rapid Sequential Writes Survive a Hard Crash", func(do *Do) {
 			for i := 1; i <= 500; i++ {
 				do.PUT(Node("n1"), fmt.Sprintf("/kv/burst:%d", i), strings.Repeat("data", 250)).
 					Status(Is(200)).
@@ -134,7 +134,7 @@ func CrashRecovery() *Suite {
 		}).
 
 		// 4
-		Test("Test Recovery When Under Concurrent Load", func(do *Do) {
+		Test("Rapid Concurrent Writes Survive a Hard Crash", func(do *Do) {
 			do.Concurrently(1_000, func(i int) {
 				do.PUT(Node("n1"), fmt.Sprintf("/kv/large:key%d", i), strings.Repeat("x", 100)).
 					Status(Is(200)).
@@ -152,6 +152,38 @@ func CrashRecovery() *Suite {
 					Hint("Your server should preserve all acknowledged writes after crash.\n" +
 						"Ensure your WAL writes are thread-safe and durably stored before acknowledging.\n" +
 						"If recovery is slow, consider implementing checkpointing to reduce replay time.").
+					Run()
+			}
+		}).
+
+		// 5
+		Test("CLEAR Survives a Hard Crash", func(do *Do) {
+			clearKeys := map[string]string{
+				"clear:test1": "value1",
+				"clear:test2": "value2",
+				"clear:test3": "value3",
+			}
+			for key, value := range clearKeys {
+				do.PUT(Node("n1"), fmt.Sprintf("/kv/%s", key), value).
+					Status(Is(200)).
+					Hint("Your server should accept PUT requests.\n" +
+						"Ensure your HTTP handler processes PUT requests correctly.").
+					Run()
+			}
+
+			do.DELETE(Node("n1"), "/clear").
+				Status(Is(200)).
+				Hint("Your server should implement a /clear endpoint.\n" +
+					"Add a DELETE /clear method that deletes all key-value pairs.").
+				Run()
+
+			do.Restart("n1", syscall.SIGKILL)
+
+			for key := range clearKeys {
+				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", key)).
+					Status(Is(404)).
+					Hint("Your server should preserve the cleared state after a hard crash.\n" +
+						"Ensure your WAL records CLEAR operations and replays them correctly during recovery.").
 					Run()
 			}
 		})

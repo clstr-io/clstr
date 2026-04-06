@@ -13,7 +13,7 @@ func HTTPAPI() *Suite {
 	).
 
 		// 1
-		Test("PUT - Basic Operations", func(do *Do) {
+		Test("PUT Stores Values", func(do *Do) {
 			capitals := map[string]string{
 				"kenya":    "Nairobi",
 				"uganda":   "Kampala",
@@ -38,23 +38,6 @@ func HTTPAPI() *Suite {
 				Body(Is("Dodoma")).
 				Hint("Your server should return the updated value after overwrite.\n" +
 					"Ensure GET requests return the most recently stored value.").
-				Run()
-		}).
-
-		// 2
-		Test("PUT - Edge and Error Cases", func(do *Do) {
-			do.PUT(Node("n1"), "/kv/empty").
-				Status(Is(400)).
-				Body(Is("value cannot be empty\n")).
-				Hint("Your server should reject empty values.\n" +
-					"Add validation to return 400 Bad Request for empty values.").
-				Run()
-
-			do.PUT(Node("n1"), "/kv/", "some_value").
-				Status(Is(400)).
-				Body(Is("key cannot be empty\n")).
-				Hint("Your server should reject empty keys.\n" +
-					"Add validation to return 400 Bad Request for empty keys.").
 				Run()
 
 			do.PUT(Node("n1"), "/kv/unicode:key", "🌍 Nairobi").
@@ -85,8 +68,25 @@ func HTTPAPI() *Suite {
 				Run()
 		}).
 
+		// 2
+		Test("PUT Rejects Empty Keys and Values", func(do *Do) {
+			do.PUT(Node("n1"), "/kv/empty").
+				Status(Is(400)).
+				Body(Matches("^value cannot be empty\n?$")).
+				Hint("Your server should reject empty values.\n" +
+					"Add validation to return 400 Bad Request for empty values.").
+				Run()
+
+			do.PUT(Node("n1"), "/kv/", "some_value").
+				Status(Is(400)).
+				Body(Matches("^key cannot be empty\n?$")).
+				Hint("Your server should reject empty keys.\n" +
+					"Add validation to return 400 Bad Request for empty keys.").
+				Run()
+		}).
+
 		// 3
-		Test("GET - Basic Operations", func(do *Do) {
+		Test("GET Returns Stored Values", func(do *Do) {
 			do.GET(Node("n1"), "/kv/kenya:capital").
 				Status(Is(200)).
 				Body(Is("Nairobi")).
@@ -126,31 +126,31 @@ func HTTPAPI() *Suite {
 		}).
 
 		// 4
-		Test("GET - Edge and Error Cases", func(do *Do) {
+		Test("GET Rejects Missing and Invalid Keys", func(do *Do) {
 			do.GET(Node("n1"), "/kv/nonexistent:key").
 				Status(Is(404)).
-				Body(Is("key not found\n")).
+				Body(Matches("^key not found\n?$")).
 				Hint("Your server should return 404 Not Found when a key doesn't exist.\n" +
 					"Check your key lookup logic and error handling.").
 				Run()
 
 			do.GET(Node("n1"), "/kv/KENYA:CAPITAL").
 				Status(Is(404)).
-				Body(Is("key not found\n")).
+				Body(Matches("^key not found\n?$")).
 				Hint("Your server should return 404 Not Found when a key doesn't exist.\n" +
 					"Check your key lookup logic and error handling.").
 				Run()
 
 			do.GET(Node("n1"), "/kv/").
 				Status(Is(400)).
-				Body(Is("key cannot be empty\n")).
+				Body(Matches("^key cannot be empty\n?$")).
 				Hint("Your server should reject empty keys.\n" +
 					"Add validation to return 400 Bad Request for empty keys.").
 				Run()
 		}).
 
 		// 5
-		Test("DELETE - Basic Operations", func(do *Do) {
+		Test("DELETE Idempotently Removes Keys", func(do *Do) {
 			do.DELETE(Node("n1"), "/kv/tanzania:capital").
 				Status(Is(200)).
 				Hint("Your server should accept DELETE requests.\n" +
@@ -159,7 +159,7 @@ func HTTPAPI() *Suite {
 
 			do.GET(Node("n1"), "/kv/tanzania:capital").
 				Status(Is(404)).
-				Body(Is("key not found\n")).
+				Body(Matches("^key not found\n?$")).
 				Hint("Your server should return 404 Not Found when a key doesn't exist.\n" +
 					"Check your key lookup logic and error handling.").
 				Run()
@@ -170,10 +170,7 @@ func HTTPAPI() *Suite {
 				Hint("Your server should only delete the specified key, not affect others.\n" +
 					"Ensure your delete operation doesn't remove unrelated data.").
 				Run()
-		}).
 
-		// 6
-		Test("DELETE - Edge and Error Cases", func(do *Do) {
 			do.DELETE(Node("n1"), "/kv/nonexistent:key").
 				Status(Is(200)).
 				Hint("Your server should gracefully handle deletion of non-existent keys.\n" +
@@ -198,16 +195,32 @@ func HTTPAPI() *Suite {
 					"Deleting the same key twice should be idempotent (return 200 OK).").
 				Run()
 
+			do.PUT(Node("n1"), "/kv/delete:twice", "reinserted").
+				Status(Is(200)).
+				Hint("Your server should allow re-inserting a previously deleted key.\n" +
+					"Ensure your storage doesn't permanently mark keys as deleted.").
+				Run()
+
+			do.GET(Node("n1"), "/kv/delete:twice").
+				Status(Is(200)).
+				Body(Is("reinserted")).
+				Hint("Your server should return the new value after re-inserting a deleted key.\n" +
+					"Ensure PUT after DELETE works correctly.").
+				Run()
+		}).
+
+		// 6
+		Test("DELETE Rejects Empty Keys", func(do *Do) {
 			do.DELETE(Node("n1"), "/kv/").
 				Status(Is(400)).
-				Body(Is("key cannot be empty\n")).
+				Body(Matches("^key cannot be empty\n?$")).
 				Hint("Your server should reject empty keys.\n" +
 					"Add validation to return 400 Bad Request for empty keys.").
 				Run()
 		}).
 
 		// 7
-		Test("CLEAR Operations", func(do *Do) {
+		Test("CLEAR Removes All Keys from the Store", func(do *Do) {
 			testKeys := map[string]string{
 				"clear:test1": "value1",
 				"clear:test2": "value2",
@@ -239,7 +252,7 @@ func HTTPAPI() *Suite {
 			for key := range testKeys {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", key)).
 					Status(Is(404)).
-					Body(Is("key not found\n")).
+					Body(Matches("^key not found\n?$")).
 					Hint("Your server should delete all keys when /clear is called.\n" +
 						"Ensure the /clear endpoint removes all stored key-value pairs.").
 					Run()
@@ -247,7 +260,7 @@ func HTTPAPI() *Suite {
 
 			do.GET(Node("n1"), "/kv/kenya:capital").
 				Status(Is(404)).
-				Body(Is("key not found\n")).
+				Body(Matches("^key not found\n?$")).
 				Hint("Your server should delete ALL keys when /clear is called.\n" +
 					"Ensure the /clear endpoint removes every key-value pair, not just recent ones.").
 				Run()
@@ -260,7 +273,7 @@ func HTTPAPI() *Suite {
 		}).
 
 		// 8
-		Test("Concurrent Operations - Different Keys", func(do *Do) {
+		Test("Concurrent Writes to Different Keys All Succeed", func(do *Do) {
 			do.Concurrently(100, func(i int) {
 				do.PUT(Node("n1"), fmt.Sprintf("/kv/concurrent:key%d", i), fmt.Sprintf("value%d", i)).
 					Status(Is(200)).
@@ -280,7 +293,7 @@ func HTTPAPI() *Suite {
 		}).
 
 		// 9
-		Test("Concurrent Operations - Same Key", func(do *Do) {
+		Test("Concurrent Writes to the Same Key Do Not Corrupt Data", func(do *Do) {
 			do.Concurrently(100, func(i int) {
 				do.PUT(Node("n1"), "/kv/concurrent:racekey", fmt.Sprintf("value%d", i)).
 					Status(Is(200)).
@@ -303,14 +316,14 @@ func HTTPAPI() *Suite {
 		}).
 
 		// 10
-		Test("Check Allowed HTTP Methods", func(do *Do) {
+		Test("Unsupported HTTP Methods Return 405", func(do *Do) {
 			for _, check := range []*Check{
 				do.POST(Node("n1"), "/kv/test:key"),
 				do.PATCH(Node("n1"), "/kv/test:key"),
 			} {
 				check.
 					Status(Is(405)).
-					Body(Is("method not allowed\n")).
+					Body(Matches("^method not allowed\n?$")).
 					Hint("Your server should reject unsupported HTTP methods on /kv/{key}.\n" +
 						"Add logic to return 405 Method Not Allowed for unsupported methods.").
 					Run()
@@ -324,7 +337,7 @@ func HTTPAPI() *Suite {
 			} {
 				check.
 					Status(Is(405)).
-					Body(Is("method not allowed\n")).
+					Body(Matches("^method not allowed\n?$")).
 					Hint("Your server should reject unsupported HTTP methods on /clear.\n" +
 						"Only DELETE /clear should be allowed. Return 405 Method Not Allowed for other methods.").
 					Run()
