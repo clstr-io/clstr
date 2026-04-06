@@ -47,6 +47,12 @@ func main() {
 				Action: cli.Test,
 			},
 			{
+				Name:      "logs",
+				Usage:     "Show logs for a node",
+				ArgsUsage: "<node>",
+				Action:    cli.ShowLogs,
+			},
+			{
 				Name:    "next",
 				Aliases: []string{"n"},
 				Usage:   "Advance to the next stage",

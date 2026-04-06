@@ -222,6 +222,35 @@ func Test(ctx context.Context, cmd *commands.Command) error {
 	return nil
 }
 
+// ShowLogs prints the captured logs for the given node.
+func ShowLogs(ctx context.Context, cmd *commands.Command) error {
+	cfg, err := validateEnvironment()
+	if err != nil {
+		return err
+	}
+
+	args := cmd.Args().Slice()
+	if len(args) == 0 {
+		return fmt.Errorf("Node name is required.\nUsage: clstr logs <node>")
+	}
+
+	nodeName := args[0]
+	logPath := attest.NodeLogPath(cfg.Challenge, nodeName)
+
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("No logs found for node %q. Run 'clstr test' first.", nodeName)
+		}
+
+		return fmt.Errorf("Failed to read logs: %w", err)
+	}
+
+	fmt.Print(string(b))
+
+	return nil
+}
+
 // NextStage advances to the next stage after verifying current stage is complete.
 func NextStage(ctx context.Context, cmd *commands.Command) error {
 	// Get Challenge

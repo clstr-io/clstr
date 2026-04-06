@@ -123,6 +123,7 @@ func (s *Suite) Run(ctx context.Context) bool {
 	}
 
 	if failed {
+		fmt.Println("\nRun 'clstr logs <node>' to inspect logs.")
 		fmt.Printf("\n%s %s\n", bold("FAILED"), crossMark)
 	} else {
 		fmt.Printf("\n%s %s\n", bold("PASSED"), checkMark)

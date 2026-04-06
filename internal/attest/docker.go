@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -15,7 +17,10 @@ import (
 const (
 	dockerNetwork = "clstr-net"
 	dockerSubnet  = "10.0.42.0/24"
+
 	containerPort = 8080
+
+	logDir = "/tmp/clstr"
 )
 
 // checkDockerDaemon verifies that docker is installed and the daemon is reachable.
@@ -62,15 +67,21 @@ func createDockerNetwork(ctx context.Context) error {
 	return nil
 }
 
-// resetDockerEnv cleans up containers and volumes for the given challenge.
+// resetDockerEnv cleans up containers, volumes, and log files for the given challenge.
 func resetDockerEnv(ctx context.Context, challengeKey string, containerNames []string) {
 	for _, name := range containerNames {
 		exec.CommandContext(ctx, "docker", "rm", "-f", "clstr-"+challengeKey+"-"+name).Run()
 		exec.CommandContext(ctx, "docker", "volume", "rm", "clstr-"+challengeKey+"-"+name+"-data").Run()
+		os.Remove(NodeLogPath(challengeKey, name))
 	}
 
 	exec.CommandContext(ctx, "docker", "network", "rm", dockerNetwork).Run()
 	exec.CommandContext(ctx, "docker", "image", "prune", "-f", "--filter", "label=io.clstr=true").Run()
+}
+
+// NodeLogPath returns the path to the log file for the given challenge and node.
+func NodeLogPath(challengeKey, nodeName string) string {
+	return filepath.Join(logDir, "clstr-"+challengeKey+"-"+nodeName+".log")
 }
 
 // containerNode is a cluster node running as a Docker container.
@@ -93,6 +104,10 @@ func (n *containerNode) MappedPort() int {
 
 func (n *containerNode) IsAlive() bool {
 	return n.alive.Load()
+}
+
+func (n *containerNode) logPath() string {
+	return filepath.Join(logDir, n.name+".log")
 }
 
 func (n *containerNode) Start(ctx context.Context) error {
@@ -125,7 +140,55 @@ func (n *containerNode) Start(ctx context.Context) error {
 
 	n.alive.Store(true)
 
+	err = os.MkdirAll(logDir, 0755)
+	if err != nil {
+		return fmt.Errorf("create log dir: %w", err)
+	}
+
+	f, err := os.OpenFile(n.logPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open log file: %w", err)
+	}
+
+	n.Annotate("started")
+
+	go func() {
+		defer f.Close()
+
+		cmd := exec.Command("docker", "logs", "--follow", n.name)
+		cmd.Stdout = f
+		cmd.Stderr = f
+		cmd.Run()
+	}()
+
 	return nil
+}
+
+func (n *containerNode) Logs() string {
+	b, err := os.ReadFile(n.logPath())
+	if err != nil {
+		return ""
+	}
+
+	return string(b)
+}
+
+func (n *containerNode) Annotate(msg string) {
+	f, err := os.OpenFile(n.logPath(), os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	// Uppercase the label but preserve node names that follow ": ".
+	i := strings.Index(msg, ": ")
+	if i >= 0 {
+		msg = strings.ToUpper(msg[:i]) + ": " + msg[i+2:]
+	} else {
+		msg = strings.ToUpper(msg)
+	}
+
+	fmt.Fprintf(f, "\n================ %s ================\n\n", msg)
 }
 
 func (n *containerNode) Stop(ctx context.Context, timeout time.Duration) error {
