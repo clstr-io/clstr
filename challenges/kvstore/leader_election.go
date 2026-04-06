@@ -333,6 +333,12 @@ func LeaderElection() *Suite {
 				Hint("The minority partition [n1, n2] must not elect a leader.\n" +
 					"A candidate needs votes from at least 3 nodes; with only n1 and n2 reachable, no election can succeed.").
 				Run()
+
+			do.GET(do.AllNodes("n1", "n2"), "/kv/foo").
+				Status(Is(503)).
+				Hint("Minority partition nodes [n1, n2] have no leader and cannot serve requests.\n" +
+					"Return 503 Service Unavailable when no leader is known.").
+				Run()
 		}).
 
 		// 10

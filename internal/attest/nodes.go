@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,6 +18,8 @@ type clusterNode interface {
 	ContainerIP() string
 	MappedPort() int
 	IsAlive() bool
+	Logs() string
+	Annotate(msg string)
 
 	Start(ctx context.Context) error
 	Stop(ctx context.Context, timeout time.Duration) error
@@ -108,6 +112,7 @@ func (do *Do) Start(name string) {
 // Stop sends SIGTERM to the node, then SIGKILL after the shutdown timeout.
 func (do *Do) Stop(name string) {
 	node := do.getNode(name)
+	node.Annotate("stopped")
 
 	err := node.Stop(do.ctx, do.config.nodeShutdownTimeout)
 	if err != nil {
@@ -118,6 +123,7 @@ func (do *Do) Stop(name string) {
 // Kill sends SIGKILL to the node immediately.
 func (do *Do) Kill(name string) {
 	node := do.getNode(name)
+	node.Annotate("killed")
 
 	err := node.Kill(do.ctx)
 	if err != nil {
@@ -146,6 +152,7 @@ func (do *Do) Restart(name string, sig ...syscall.Signal) {
 // Partition installs iptables DROP rules so nodes in different groups cannot
 // reach each other. Rules are bidirectional. Call Heal to restore connectivity.
 func (do *Do) Partition(groups ...[]string) {
+	cutoffs := map[string][]string{}
 	for i, g1 := range groups {
 		for j, g2 := range groups {
 			if i >= j {
@@ -162,15 +169,25 @@ func (do *Do) Partition(groups ...[]string) {
 					execOnNode(do.ctx, nA, "iptables", "-A", "OUTPUT", "-d", ipB, "-j", "DROP")
 					execOnNode(do.ctx, nB, "iptables", "-A", "INPUT", "-s", ipA, "-j", "DROP")
 					execOnNode(do.ctx, nB, "iptables", "-A", "OUTPUT", "-d", ipA, "-j", "DROP")
+
+					cutoffs[a] = append(cutoffs[a], b)
+					cutoffs[b] = append(cutoffs[b], a)
 				}
 			}
 		}
+	}
+
+	for name, cutoff := range cutoffs {
+		sort.Strings(cutoff)
+		do.getNode(name).Annotate("partitioned from: " + strings.Join(cutoff, ", "))
 	}
 }
 
 // Heal flushes all iptables rules on every node, restoring full connectivity.
 func (do *Do) Heal() {
 	do.nodes.Range(func(name string, node clusterNode) bool {
+		node.Annotate("partition healed")
+
 		err := node.Exec(do.ctx, "iptables", "-F")
 		if err != nil {
 			fmt.Println(red("Error healing"), red(name), ":", err)

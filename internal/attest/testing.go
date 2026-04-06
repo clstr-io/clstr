@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// mockNode is a Node backed by an already-running server (e.g. httptest.Server).
 type mockNode struct {
 	port int
 }
@@ -39,12 +38,16 @@ func (n *mockNode) Exec(_ context.Context, _ ...string) error {
 	return nil
 }
 
-// Cancel cancels the Do context, stopping all in-flight assertions.
+func (n *mockNode) Logs() string {
+	return ""
+}
+
+func (n *mockNode) Annotate(_ string) {}
+
 func (do *Do) Cancel() {
 	do.cancel()
 }
 
-// MockNode registers a pre-running server as a node. Used in tests.
 func (do *Do) MockNode(name, port string) {
 	p, _ := strconv.Atoi(port)
 	do.nodes.Set(name, &mockNode{port: p})
