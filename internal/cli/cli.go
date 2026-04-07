@@ -362,7 +362,7 @@ func ListChallenges(ctx context.Context, cmd *commands.Command) error {
 		fmt.Printf("  %-20s - %s (%d stages)\n", key, challenge.Name, challenge.Len())
 	}
 
-	fmt.Printf("\nStart with: clstr init <challenge-name>\n")
+	fmt.Printf("\nStart with: clstr init <challenge> --language <lang>\n")
 
 	return nil
 }
