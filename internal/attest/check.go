@@ -330,13 +330,13 @@ func (c *Check) verify() {
 			}
 		}
 
-		var details strings.Builder
+		var parts []string
 		for _, r := range relevant {
-			details.WriteString("\n  ")
-			details.WriteString(formatResult(r))
+			parts = append(parts, formatResult(r))
 		}
+		details := "\n  " + strings.Join(parts, "\n\n  ")
 
-		panic(fmt.Sprintf("%s - %s%s%s", c.method, desc, details.String(), formatHelp()))
+		panic(fmt.Sprintf("%s - %s%s%s", c.method, desc, details, formatHelp()))
 	}
 
 	c.reportFailure(c.results[0], formatHelp)
