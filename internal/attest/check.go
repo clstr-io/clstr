@@ -105,26 +105,16 @@ type headerMatcher struct {
 }
 
 // Eventually configures the assertion to retry until success or timeout.
-func (c *Check) Eventually(timeout ...time.Duration) *Check {
+func (c *Check) Eventually(timeout time.Duration) *Check {
 	c.timing = timingEventually
-
-	c.timeout = c.config.retryTimeout
-	if len(timeout) > 0 {
-		c.timeout = timeout[0]
-	}
-
+	c.timeout = timeout
 	return c
 }
 
 // Consistently configures the assertion to verify success for the entire duration.
-func (c *Check) Consistently(timeout ...time.Duration) *Check {
+func (c *Check) Consistently(timeout time.Duration) *Check {
 	c.timing = timingConsistently
-
-	c.timeout = c.config.retryTimeout
-	if len(timeout) > 0 {
-		c.timeout = timeout[0]
-	}
-
+	c.timeout = timeout
 	return c
 }
 
@@ -368,6 +358,10 @@ func formatResult(r result) string {
 	}
 
 	if r.failure == "" {
+		if r.body != "" {
+			return fmt.Sprintf("%s → %d\n      %s", prefix, r.status, prettyBody(r.body, "      "))
+		}
+
 		return fmt.Sprintf("%s → %d", prefix, r.status)
 	}
 

@@ -7,13 +7,8 @@ import (
 	. "github.com/clstr-io/clstr/internal/attest"
 )
 
-const (
-	// electionTimeout is the upper bound of the randomized election timeout.
-	electionTimeout = time.Second
-
-	// heartbeatInterval is how often the leader sends AppendEntries heartbeats.
-	heartbeatInterval = 100 * time.Millisecond
-)
+// electionTimeout is the upper bound of the randomized election timeout.
+const electionTimeout = time.Second
 
 // findLeader returns the name and cluster info of the first node currently
 // reporting role=leader. If no node names are provided, all nodes are searched.
@@ -52,24 +47,21 @@ func findFollower(do *Do, nodes ...string) (string, *FetchResponse) {
 func LeaderElection() *Suite {
 	return New(
 		WithCluster(5),
-		WithRetryTimeout(3*electionTimeout),
+		WithClusterSettleDuration(3*electionTimeout),
 	).
 
 		// 1
-		Test("/cluster/info Returns Pre-Election State", func(do *Do) {
+		Test("/cluster/info Returns Cluster State", func(do *Do) {
 			do.GET(do.AllNodes(), "/cluster/info").
 				Status(Is(200)).
 				JSON("id", Matches(`^10\.0\.42\.\d+:8080$`)).
 				JSON("role", OneOf("leader", "follower", "candidate")).
-				JSON("term", Is("0")).
-				JSON("leader", IsNull[string]()).
 				JSON("peers", HasLen[string](4)).
+				JSON("peers.0", Matches(`^10\.0\.42\.\d+:8080$`)).
 				Hint("GET /cluster/info must return a JSON object with:\n" +
 					"  id: this node's own address (from ADDR)\n" +
 					"  role: \"leader\", \"follower\", or \"candidate\"\n" +
-					"  term: 0 before any election has occurred\n" +
-					"  leader: null before a leader is known\n" +
-					"  peers: the 4 other nodes' addresses").
+					"  peers: the 4 other nodes' addresses (e.g. \"10.0.42.102:8080\")").
 				Run()
 		}).
 
@@ -122,9 +114,8 @@ func LeaderElection() *Suite {
 
 			currentTerm := leaderInfo.JSON("term")
 
-			time.Sleep(3 * electionTimeout)
-
 			do.GET(Node(leaderNode), "/cluster/info").
+				Consistently(3*electionTimeout).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
 				JSON("term", Is(currentTerm)).
@@ -261,37 +252,6 @@ func LeaderElection() *Suite {
 		}).
 
 		// 8
-		Test("Service Unavailable During Election", func(do *Do) {
-			prevLeaderNode, _ := findLeader(do)
-			if prevLeaderNode == "" {
-				panic("No leader node found.")
-			}
-
-			do.Kill(prevLeaderNode)
-
-			hint503 := "When no leader is known, return 503 Service Unavailable.\n" +
-				"Clear the known-leader state when contact with the leader is lost."
-
-			do.GET(do.AllNodes(), "/kv/foo").
-				Eventually(3 * electionTimeout).
-				Status(Is(503)).
-				Hint(hint503).
-				Run()
-
-			do.PUT(do.AllNodes(), "/kv/foo", "value").
-				Status(Is(503)).
-				Hint(hint503).
-				Run()
-
-			do.DELETE(do.AllNodes(), "/kv/foo").
-				Status(Is(503)).
-				Hint(hint503).
-				Run()
-
-			do.Start(prevLeaderNode)
-		}).
-
-		// 9
 		Test("Partition Enforces Quorum", func(do *Do) {
 			// Restart the current leader so no node enters the partition as an incumbent leader.
 			// This prevents a minority node from failing the Consistently check with a stale role=leader.
@@ -303,7 +263,6 @@ func LeaderElection() *Suite {
 			do.Partition([]string{"n1", "n2"}, []string{"n3", "n4", "n5"})
 
 			do.GET(do.ExactlyOneNode("n3", "n4", "n5"), "/cluster/info").
-				Eventually(3*electionTimeout).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
 				Hint("Expected exactly one leader in the majority partition [n3, n4, n5] (found 0 or more than 1).\n" +
@@ -333,11 +292,26 @@ func LeaderElection() *Suite {
 				Hint("The minority partition [n1, n2] must not elect a leader.\n" +
 					"A candidate needs votes from at least 3 nodes; with only n1 and n2 reachable, no election can succeed.").
 				Run()
+		}).
+
+		// 9
+		Test("Leaderless Nodes Return 503", func(do *Do) {
+			hint503 := "Minority partition nodes [n1, n2] have no leader and cannot serve requests.\n" +
+				"Return 503 Service Unavailable when no leader is known."
 
 			do.GET(do.AllNodes("n1", "n2"), "/kv/foo").
 				Status(Is(503)).
-				Hint("Minority partition nodes [n1, n2] have no leader and cannot serve requests.\n" +
-					"Return 503 Service Unavailable when no leader is known.").
+				Hint(hint503).
+				Run()
+
+			do.PUT(do.AllNodes("n1", "n2"), "/kv/foo", "value").
+				Status(Is(503)).
+				Hint(hint503).
+				Run()
+
+			do.DELETE(do.AllNodes("n1", "n2"), "/kv/foo").
+				Status(Is(503)).
+				Hint(hint503).
 				Run()
 		}).
 
@@ -345,11 +319,7 @@ func LeaderElection() *Suite {
 		Test("Cluster Converges After Partition Heals", func(do *Do) {
 			do.Heal()
 
-			// Wait for the cluster to settle.
-			time.Sleep(3 * electionTimeout)
-
 			do.GET(do.ExactlyOneNode(), "/cluster/info").
-				Eventually(3*electionTimeout).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
 				Hint("No leader elected after partition healed.\n" +

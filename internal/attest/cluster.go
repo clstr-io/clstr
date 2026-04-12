@@ -66,11 +66,14 @@ func (do *Do) AllNodes(names ...string) NodeSelector {
 	return NodeSelector{kind: nodeAll, names: names}
 }
 
-// Nodes returns the names of all nodes in the cluster.
+// Nodes returns the names of all alive nodes in the cluster.
 func (do *Do) Nodes() []string {
 	var names []string
-	do.nodes.Range(func(name string, _ clusterNode) bool {
-		names = append(names, name)
+	do.nodes.Range(func(name string, node clusterNode) bool {
+		if node.IsAlive() {
+			names = append(names, name)
+		}
+
 		return true
 	})
 
@@ -90,12 +93,7 @@ func (do *Do) getNode(name string) clusterNode {
 // Start starts a previously stopped or killed node.
 func (do *Do) Start(name string) {
 	node := do.getNode(name)
-
-	select {
-	case <-do.ctx.Done():
-		return
-	default:
-	}
+	node.Annotate("started")
 
 	err := node.Start(do.ctx)
 	if err != nil {
@@ -181,6 +179,8 @@ func (do *Do) Partition(groups ...[]string) {
 		sort.Strings(cutoff)
 		do.getNode(name).Annotate("partitioned from: " + strings.Join(cutoff, ", "))
 	}
+
+	do.Settle(do.config.clusterSettleDuration)
 }
 
 // Heal flushes all iptables rules on every node, restoring full connectivity.
@@ -195,6 +195,16 @@ func (do *Do) Heal() {
 
 		return true
 	})
+
+	do.Settle(do.config.clusterSettleDuration)
+}
+
+// Settle pauses for the given duration to let the cluster settle.
+func (do *Do) Settle(d time.Duration) {
+	select {
+	case <-do.ctx.Done():
+	case <-time.After(d):
+	}
 }
 
 // FetchResponse is the result of a Fetch call.

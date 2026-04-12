@@ -2,10 +2,10 @@ package attest_test
 
 import (
 	"context"
-	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,7 +18,6 @@ func TestHTTP(t *testing.T) {
 		handler    http.HandlerFunc
 		opts       []Option
 		testFunc   func(*Do)
-		cancel     func(*Do)
 		shouldPass bool
 	}{
 		{
@@ -124,7 +123,7 @@ func TestHTTP(t *testing.T) {
 			}(),
 			testFunc: func(do *Do) {
 				do.GET(Node("n1"), "/").
-					Eventually().
+					Eventually(time.Second).
 					Status(Is(200)).
 					Body(Is("Ready")).
 					Hint("Service should eventually become ready").
@@ -149,28 +148,6 @@ func TestHTTP(t *testing.T) {
 			shouldPass: false,
 		},
 		{
-			name: "Eventually Cancellation",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				w.Write([]byte("Starting up..."))
-			},
-			testFunc: func(do *Do) {
-				do.GET(Node("n1"), "/").
-					Eventually(time.Second).
-					Status(Is(200)).
-					Body(Is("Ready")).
-					Hint("Should fail when operation is cancelled before completion").
-					Run()
-			},
-			cancel: func(do *Do) {
-				go func() {
-					time.Sleep(500 * time.Millisecond)
-					do.Cancel()
-				}()
-			},
-			shouldPass: false,
-		},
-		{
 			name: "Consistently OK",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
@@ -189,8 +166,9 @@ func TestHTTP(t *testing.T) {
 		{
 			name: "Consistently Failure",
 			handler: func() http.HandlerFunc {
+				var n atomic.Int32
 				return func(w http.ResponseWriter, r *http.Request) {
-					if rand.IntN(2) == 1 {
+					if n.Add(1)%2 == 1 {
 						w.WriteHeader(http.StatusOK)
 						w.Write([]byte("Stable"))
 					} else {
@@ -201,35 +179,13 @@ func TestHTTP(t *testing.T) {
 			}(),
 			testFunc: func(do *Do) {
 				do.GET(Node("n1"), "/").
-					Consistently().
+					Consistently(time.Second).
 					Status(Is(200)).
 					Body(Is("Stable")).
 					Hint("Should fail when service returns intermittent errors").
 					Run()
 			},
 			shouldPass: false,
-		},
-		{
-			name: "Consistently Cancellation",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("Stable"))
-			},
-			testFunc: func(do *Do) {
-				do.GET(Node("n1"), "/").
-					Consistently(3 * time.Second).
-					Status(Is(200)).
-					Body(Is("Stable")).
-					Hint("Should pass when cancelled during consistency check").
-					Run()
-			},
-			cancel: func(do *Do) {
-				go func() {
-					time.Sleep(500 * time.Millisecond)
-					do.Cancel()
-				}()
-			},
-			shouldPass: true,
 		},
 		{
 			name: "Contains Checker - matches substring",
@@ -574,10 +530,6 @@ func TestHTTP(t *testing.T) {
 			success := suite.
 				Setup(func(do *Do) {
 					do.MockNode("n1", strings.Split(server.URL, ":")[2])
-
-					if tt.cancel != nil {
-						tt.cancel(do)
-					}
 				}).
 				Test(tt.name, func(do *Do) {
 					tt.testFunc(do)

@@ -150,8 +150,6 @@ func (n *containerNode) Start(ctx context.Context) error {
 		return fmt.Errorf("open log file: %w", err)
 	}
 
-	n.Annotate("started")
-
 	go func() {
 		defer f.Close()
 
@@ -160,6 +158,32 @@ func (n *containerNode) Start(ctx context.Context) error {
 		cmd.Stderr = f
 		cmd.Run()
 	}()
+
+	return nil
+}
+
+func (n *containerNode) Stop(ctx context.Context, timeout time.Duration) error {
+	out, err := exec.CommandContext(
+		ctx, "docker", "stop", "--timeout", fmt.Sprintf("%d", int(timeout.Seconds())), n.name,
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker stop: %w\n%s", err, out)
+	}
+
+	n.alive.Store(false)
+
+	return nil
+}
+
+func (n *containerNode) Kill(ctx context.Context) error {
+	out, err := exec.CommandContext(
+		ctx, "docker", "kill", "--signal", "SIGKILL", n.name,
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker kill: %w\n%s", err, out)
+	}
+
+	n.alive.Store(false)
 
 	return nil
 }
@@ -189,32 +213,6 @@ func (n *containerNode) Annotate(msg string) {
 	}
 
 	fmt.Fprintf(f, "\n================ %s ================\n\n", msg)
-}
-
-func (n *containerNode) Stop(ctx context.Context, timeout time.Duration) error {
-	out, err := exec.CommandContext(
-		ctx, "docker", "stop", "--timeout", fmt.Sprintf("%d", int(timeout.Seconds())), n.name,
-	).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("docker stop: %w\n%s", err, out)
-	}
-
-	n.alive.Store(false)
-
-	return nil
-}
-
-func (n *containerNode) Kill(ctx context.Context) error {
-	out, err := exec.CommandContext(
-		ctx, "docker", "kill", "--signal", "SIGKILL", n.name,
-	).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("docker kill: %w\n%s", err, out)
-	}
-
-	n.alive.Store(false)
-
-	return nil
 }
 
 func (n *containerNode) Exec(ctx context.Context, args ...string) error {
