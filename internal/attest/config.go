@@ -6,21 +6,21 @@ import (
 )
 
 type config struct {
-	challengeKey           string
-	nodes                  []string
-	nodeStartTimeout       time.Duration
-	nodeShutdownTimeout    time.Duration
-	clusterSettleDuration  time.Duration
-	pollInterval           time.Duration
-	requestTimeout         time.Duration
+	challengeKey          string
+	nodes                 []string
+	nodeStartTimeout      time.Duration
+	nodeShutdownTimeout   time.Duration
+	clusterSettleDuration time.Duration
+	pollInterval          time.Duration
+	requestTimeout        time.Duration
 }
 
 func defaultConfig() *config {
 	return &config{
 		nodeStartTimeout:    10 * time.Second,
 		nodeShutdownTimeout: 5 * time.Second,
-		pollInterval:        500 * time.Millisecond,
-		requestTimeout:      250 * time.Millisecond,
+		pollInterval:        time.Second,
+		requestTimeout:      500 * time.Millisecond,
 	}
 }
 

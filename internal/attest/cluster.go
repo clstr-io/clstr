@@ -93,7 +93,7 @@ func (do *Do) getNode(name string) clusterNode {
 // Start starts a previously stopped or killed node.
 func (do *Do) Start(name string) {
 	node := do.getNode(name)
-	node.Annotate("started")
+	node.Annotate("started") // FIXME: called before log file exists
 
 	err := node.Start(do.ctx)
 	if err != nil {
