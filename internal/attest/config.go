@@ -6,22 +6,21 @@ import (
 )
 
 type config struct {
-	challengeKey        string
-	nodes               []string
-	nodeStartTimeout    time.Duration
-	nodeShutdownTimeout time.Duration
-	retryTimeout       time.Duration
-	pollInterval        time.Duration
-	requestTimeout      time.Duration
+	challengeKey           string
+	nodes                  []string
+	nodeStartTimeout       time.Duration
+	nodeShutdownTimeout    time.Duration
+	clusterSettleDuration  time.Duration
+	pollInterval           time.Duration
+	requestTimeout         time.Duration
 }
 
 func defaultConfig() *config {
 	return &config{
 		nodeStartTimeout:    10 * time.Second,
 		nodeShutdownTimeout: 5 * time.Second,
-		retryTimeout:       5 * time.Second,
-		pollInterval:        100 * time.Millisecond,
-		requestTimeout:      5 * time.Second,
+		pollInterval:        500 * time.Millisecond,
+		requestTimeout:      250 * time.Millisecond,
 	}
 }
 
@@ -63,10 +62,11 @@ func WithNodeShutdownTimeout(d time.Duration) Option {
 	}
 }
 
-// WithRetryTimeout sets the default timeout for Eventually and Consistently.
-func WithRetryTimeout(d time.Duration) Option {
+// WithClusterSettleDuration sets how long Partition and Heal wait after
+// topology changes for in-flight RPCs to drain and timeouts to expire.
+func WithClusterSettleDuration(d time.Duration) Option {
 	return func(c *config) {
-		c.retryTimeout = d
+		c.clusterSettleDuration = d
 	}
 }
 

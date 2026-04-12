@@ -190,10 +190,8 @@ func (do *Do) http(sel NodeSelector, method, path string, args ...any) *Check {
 
 		for _, name := range names {
 			node := do.getNode(name)
-			if node.IsAlive() {
-				a.urls = append(a.urls, fmt.Sprintf("http://127.0.0.1:%d%s", node.MappedPort(), path))
-				a.nodeNames = append(a.nodeNames, name)
-			}
+			a.urls = append(a.urls, fmt.Sprintf("http://127.0.0.1:%d%s", node.MappedPort(), path))
+			a.nodeNames = append(a.nodeNames, name)
 		}
 	}
 
