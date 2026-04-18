@@ -71,7 +71,7 @@ func InitChallenge(ctx context.Context, cmd *commands.Command) error {
 	// Get Challenge
 	args := cmd.Args().Slice()
 	if len(args) == 0 {
-		return fmt.Errorf("Challenge name is required.\nUsage: clstr init <challenge> [path]")
+		return fmt.Errorf("Challenge name is required.\nUsage: %s", yellow("clstr init <challenge> [path]"))
 	}
 
 	challengeKey := args[0]
@@ -112,9 +112,9 @@ func InitChallenge(ctx context.Context, cmd *commands.Command) error {
 
 	firstStageKey := challenge.StageOrder[0]
 	if targetPath == "." {
-		fmt.Printf("Implement %s stage, then run %s.\n", firstStageKey, yellow("'clstr test'"))
+		fmt.Printf("Implement %s stage, then run %s.\n", firstStageKey, yellow("clstr test"))
 	} else {
-		fmt.Printf("cd %s and implement %s stage, then run %s.\n", targetPath, firstStageKey, yellow("'clstr test'"))
+		fmt.Printf("cd %s and implement %s stage, then run %s.\n", targetPath, firstStageKey, yellow("clstr test"))
 	}
 
 	return nil
@@ -171,7 +171,7 @@ func Test(ctx context.Context, cmd *commands.Command) error {
 		challengeKey = cfg.Challenge
 		stageKey = cmd.Args().Slice()[0]
 	default:
-		return fmt.Errorf("Too many arguments.\nUsage: clstr test [stage]")
+		return fmt.Errorf("Too many arguments.\nUsage: %s", yellow("clstr test [stage]"))
 	}
 
 	challenge, err := registry.GetChallenge(challengeKey)
@@ -216,7 +216,7 @@ func Test(ctx context.Context, cmd *commands.Command) error {
 
 	targetIndex := challenge.StageIndex(stageKey)
 	if targetIndex < challenge.Len()-1 {
-		fmt.Printf("\nRun %s to advance to the next stage.\n", yellow("'clstr next'"))
+		fmt.Printf("\nRun %s to advance to the next stage.\n", yellow("clstr next"))
 	}
 
 	return nil
@@ -231,7 +231,7 @@ func ShowLogs(ctx context.Context, cmd *commands.Command) error {
 
 	args := cmd.Args().Slice()
 	if len(args) == 0 {
-		return fmt.Errorf("Node name is required.\nUsage: clstr logs <node>")
+		return fmt.Errorf("Node name is required.\nUsage: %s", yellow("clstr logs <node>"))
 	}
 
 	nodeName := args[0]
@@ -240,7 +240,7 @@ func ShowLogs(ctx context.Context, cmd *commands.Command) error {
 	b, err := os.ReadFile(logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("No logs found for node %q. Run 'clstr test' first.", nodeName)
+			return fmt.Errorf("No logs found for node %q. Run %s first.", nodeName, yellow("clstr test"))
 		}
 
 		return fmt.Errorf("Failed to read logs: %w", err)
@@ -306,7 +306,7 @@ func NextStage(ctx context.Context, cmd *commands.Command) error {
 	fmt.Printf("Advanced to %s: %s\n\n", nextStageKey, nextStage.Name)
 	guideURL := fmt.Sprintf("%s/%s/%s", DocsBaseURL, cfg.Challenge, nextStageKey)
 	fmt.Printf("Read the guide: \033]8;;%s\033\\%s/%s/%s\033]8;;\033\\\n\n", guideURL, DocsBaseURL, cfg.Challenge, nextStageKey)
-	fmt.Printf("Run %s when ready.\n", yellow("'clstr test'"))
+	fmt.Printf("Run %s when ready.\n", yellow("clstr test"))
 
 	return nil
 }
@@ -348,7 +348,7 @@ func ShowStatus(ctx context.Context, cmd *commands.Command) error {
 	// Next steps
 	guideURL := fmt.Sprintf("%s/%s/%s", DocsBaseURL, cfg.Challenge, cfg.Stage)
 	fmt.Printf("\nRead the guide: \033]8;;%s\033\\%s/%s/%s\033]8;;\033\\\n\n", guideURL, DocsBaseURL, cfg.Challenge, cfg.Stage)
-	fmt.Printf("Implement %s, then run %s.\n", cfg.Stage, yellow("'clstr test'"))
+	fmt.Printf("Implement %s, then run %s.\n", cfg.Stage, yellow("clstr test"))
 
 	return nil
 }
@@ -362,7 +362,7 @@ func ListChallenges(ctx context.Context, cmd *commands.Command) error {
 		fmt.Printf("  %-20s - %s (%d stages)\n", key, challenge.Name, challenge.Len())
 	}
 
-	fmt.Printf("\nStart with: clstr init <challenge> --language <lang>\n")
+	fmt.Printf("\nStart with: %s\n", yellow("clstr init <challenge> --language <lang>"))
 
 	return nil
 }

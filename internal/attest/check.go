@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -290,7 +291,8 @@ func (c *Check) verify() {
 			return ""
 		}
 
-		return "\n\n  " + strings.ReplaceAll(c.hint, "\n", "\n  ")
+		indented := strings.ReplaceAll(c.hint, "\n", "\n  ")
+		return "\n\n  " + yellow(indented)
 	}
 
 	if total > 1 {
@@ -344,11 +346,30 @@ func prettyBody(s, indent string) string {
 	return s
 }
 
-func formatResult(r result) string {
-	prefix := r.url
-	if r.node != "" {
-		prefix = fmt.Sprintf("%s (%s)", r.url, r.node)
+func colorStatus(status int) string {
+	s := fmt.Sprintf("%d", status)
+	if status >= 200 && status < 300 {
+		return green(s)
 	}
+
+	return red(s)
+}
+
+func resultDisplayURL(r result) string {
+	if r.node == "" {
+		return r.url
+	}
+
+	u, err := url.Parse(r.url)
+	if err != nil {
+		return r.url
+	}
+
+	return fmt.Sprintf("http://%s:%d%s", bold(r.node), containerPort, u.RequestURI())
+}
+
+func formatResult(r result) string {
+	prefix := resultDisplayURL(r)
 
 	if r.err != nil {
 		if errors.Is(r.err, context.DeadlineExceeded) {
@@ -359,20 +380,17 @@ func formatResult(r result) string {
 
 	if r.failure == "" {
 		if r.body != "" {
-			return fmt.Sprintf("%s → %d\n      %s", prefix, r.status, prettyBody(r.body, "      "))
+			return fmt.Sprintf("%s → %s\n      %s", prefix, colorStatus(r.status), prettyBody(r.body, "      "))
 		}
 
-		return fmt.Sprintf("%s → %d", prefix, r.status)
+		return fmt.Sprintf("%s → %s", prefix, colorStatus(r.status))
 	}
 
-	return fmt.Sprintf("%s → %d\n    %s\n      %s", prefix, r.status, r.failure, prettyBody(r.body, "      "))
+	return fmt.Sprintf("%s → %s\n    %s\n      %s", prefix, colorStatus(r.status), r.failure, prettyBody(r.body, "      "))
 }
 
 func (c *Check) reportFailure(r result, formatHelp func() string) {
-	prefix := fmt.Sprintf("%s %s", c.method, r.url)
-	if r.node != "" {
-		prefix = fmt.Sprintf("%s (%s)", prefix, r.node)
-	}
+	prefix := fmt.Sprintf("%s %s", c.method, resultDisplayURL(r))
 
 	if r.err != nil {
 		errMsg := r.err.Error()
@@ -383,28 +401,28 @@ func (c *Check) reportFailure(r result, formatHelp func() string) {
 		panic(fmt.Sprintf("%s\n  %s%s", prefix, errMsg, formatHelp()))
 	}
 
-	prefix = fmt.Sprintf("%s → %d", prefix, r.status)
+	prefix = fmt.Sprintf("%s → %s", prefix, colorStatus(r.status))
 
 	checkAll(r.status, c.statusMatchers, func(m Matcher[int], actual int) {
-		panic(fmt.Sprintf("%s\n  Expected status: %s\n  Actual status: %d %s%s",
-			prefix, m.Expected(), actual, http.StatusText(actual), formatHelp()))
+		panic(fmt.Sprintf("%s\n  %s\n  Actual status: %d %s%s",
+			prefix, red("Expected status: "+m.Expected()), actual, http.StatusText(actual), formatHelp()))
 	})
 
 	for _, hm := range c.headerMatchers {
 		value := r.headers.Get(hm.name)
 		checkAll(value, hm.matchers, func(m Matcher[string], actual string) {
-			panic(fmt.Sprintf("%s\n  Expected header %s: %s\n  Actual value: %q%s",
-				prefix, hm.name, m.Expected(), actual, formatHelp()))
+			panic(fmt.Sprintf("%s\n  %s\n  Actual value: %q%s",
+				prefix, red("Expected header "+hm.name+": "+m.Expected()), actual, formatHelp()))
 		})
 	}
 
 	checkAll(r.body, c.bodyMatchers, func(m Matcher[string], actual string) {
-		panic(fmt.Sprintf("%s\n  Expected response: %s\n  Actual response: %s%s",
-			prefix, m.Expected(), prettyBody(actual, "  "), formatHelp()))
+		panic(fmt.Sprintf("%s\n  %s\n  Actual response: %s%s",
+			prefix, red("Expected response: "+m.Expected()), prettyBody(actual, "  "), formatHelp()))
 	})
 
 	checkAll(r.body, c.jsonMatchers, func(m Matcher[string], actual string) {
-		panic(fmt.Sprintf("%s\n  Expected JSON: %s\n  Actual response: %s%s",
-			prefix, m.Expected(), prettyBody(actual, "  "), formatHelp()))
+		panic(fmt.Sprintf("%s\n  %s\n  Actual response: %s%s",
+			prefix, red("Expected JSON: "+m.Expected()), prettyBody(actual, "  "), formatHelp()))
 	})
 }
