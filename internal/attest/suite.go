@@ -10,6 +10,7 @@ import (
 var (
 	green     = color.New(color.FgGreen).SprintFunc()
 	red       = color.New(color.FgRed).SprintFunc()
+	yellow    = color.New(color.FgYellow).SprintFunc()
 	bold      = color.New(color.Bold).SprintFunc()
 	checkMark = green("✓")
 	crossMark = red("✗")
@@ -123,7 +124,7 @@ func (s *Suite) Run(ctx context.Context) bool {
 	}
 
 	if failed {
-		fmt.Println("\nRun 'clstr logs <node>' to inspect logs.")
+		fmt.Printf("\nRun %s to inspect logs.\n", yellow("clstr logs <node>"))
 		fmt.Printf("\n%s %s\n", bold("FAILED"), crossMark)
 	} else {
 		fmt.Printf("\n%s %s\n", bold("PASSED"), checkMark)

@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/fatih/color"
 	"github.com/goccy/go-yaml"
 )
+
+var yellow = color.New(color.FgYellow).SprintFunc()
 
 const statePath = "clstr.yaml"
 
@@ -19,7 +22,7 @@ type State struct {
 func Load() (*State, error) {
 	_, err := os.Stat(statePath)
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("Not in a challenge directory.\nRun this command from a directory created with 'clstr init <challenge>'.")
+		return nil, fmt.Errorf("Not in a challenge directory.\nRun this command from a directory created with %s.", yellow("clstr init <challenge>"))
 	}
 
 	bytes, err := os.ReadFile(statePath)
