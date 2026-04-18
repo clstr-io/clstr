@@ -253,13 +253,6 @@ func LeaderElection() *Suite {
 
 		// 8
 		Test("Partition Enforces Quorum", func(do *Do) {
-			// Restart the current leader so no node enters the partition as an incumbent leader.
-			// This prevents a minority node from failing the Consistently check with a stale role=leader.
-			prevLeaderNode, _ := findLeader(do)
-			if prevLeaderNode != "" {
-				do.Restart(prevLeaderNode)
-			}
-
 			do.Partition([]string{"n1", "n2"}, []string{"n3", "n4", "n5"})
 
 			do.GET(do.ExactlyOneNode("n3", "n4", "n5"), "/cluster/info").

@@ -222,33 +222,27 @@ func Test(ctx context.Context, cmd *commands.Command) error {
 	return nil
 }
 
-// ShowLogs prints the captured logs for the given node.
+// ShowLogs prints the captured logs for the given nodes, interleaved by timestamp.
+// With no arguments, shows all nodes.
 func ShowLogs(ctx context.Context, cmd *commands.Command) error {
 	cfg, err := validateEnvironment()
 	if err != nil {
 		return err
 	}
 
-	args := cmd.Args().Slice()
-	if len(args) == 0 {
-		return fmt.Errorf("Node name is required.\nUsage: %s", yellow("clstr logs <node>"))
-	}
-
-	nodeName := args[0]
-	logPath := attest.NodeLogPath(cfg.Challenge, nodeName)
-
-	b, err := os.ReadFile(logPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("No logs found for node %q. Run %s first.", nodeName, yellow("clstr test"))
+	nodeNames := cmd.Args().Slice()
+	if len(nodeNames) == 0 {
+		nodeNames, err = attest.NodesWithLogs(cfg.Challenge)
+		if err != nil {
+			return fmt.Errorf("Failed to list nodes: %w", err)
 		}
 
-		return fmt.Errorf("Failed to read logs: %w", err)
+		if len(nodeNames) == 0 {
+			return fmt.Errorf("No logs found. Run %s first.", yellow("clstr test"))
+		}
 	}
 
-	fmt.Print(string(b))
-
-	return nil
+	return attest.RenderLogs(cfg.Challenge, nodeNames)
 }
 
 // NextStage advances to the next stage after verifying current stage is complete.

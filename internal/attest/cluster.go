@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -24,6 +25,7 @@ type clusterNode interface {
 	Start(ctx context.Context) error
 	Stop(ctx context.Context, timeout time.Duration) error
 	Kill(ctx context.Context) error
+	Restart(ctx context.Context, signal syscall.Signal, timeout time.Duration) error
 	Exec(ctx context.Context, args ...string) error
 }
 
@@ -93,7 +95,7 @@ func (do *Do) getNode(name string) clusterNode {
 // Start starts a previously stopped or killed node.
 func (do *Do) Start(name string) {
 	node := do.getNode(name)
-	node.Annotate("started") // FIXME: called before log file exists
+	node.Annotate("start")
 
 	err := node.Start(do.ctx)
 	if err != nil {
@@ -110,7 +112,7 @@ func (do *Do) Start(name string) {
 // Stop sends SIGTERM to the node, then SIGKILL after the shutdown timeout.
 func (do *Do) Stop(name string) {
 	node := do.getNode(name)
-	node.Annotate("stopped")
+	node.Annotate("stop")
 
 	err := node.Stop(do.ctx, do.config.nodeShutdownTimeout)
 	if err != nil {
@@ -121,7 +123,7 @@ func (do *Do) Stop(name string) {
 // Kill sends SIGKILL to the node immediately.
 func (do *Do) Kill(name string) {
 	node := do.getNode(name)
-	node.Annotate("killed")
+	node.Annotate("kill")
 
 	err := node.Kill(do.ctx)
 	if err != nil {
@@ -129,28 +131,40 @@ func (do *Do) Kill(name string) {
 	}
 }
 
-// Restart stops the node and starts it again.
-// Pass syscall.SIGKILL to crash immediately instead of graceful shutdown.
+// Restart restarts the node. Pass syscall.SIGKILL to crash immediately instead of graceful shutdown.
 func (do *Do) Restart(name string, sig ...syscall.Signal) {
+	node := do.getNode(name)
+	node.Annotate("restart")
+
 	signal := syscall.SIGTERM
-	if len(sig) > 0 {
-		signal = sig[0]
+	timeout := do.config.nodeShutdownTimeout
+	if len(sig) > 0 && sig[0] == syscall.SIGKILL {
+		signal = syscall.SIGKILL
+		timeout = 0
 	}
 
-	switch signal {
-	case syscall.SIGKILL:
-		do.Kill(name)
-	default:
-		do.Stop(name)
+	err := node.Restart(do.ctx, signal, timeout)
+	if err != nil {
+		panic(fmt.Sprintf("restart %q: %v", name, err))
 	}
 
-	do.Start(name)
+	containerName := "clstr-" + do.config.challengeKey + "-" + name
+	err = waitUntilNodeReady(do.ctx, name, containerName, node, do.config.nodeStartTimeout, do.config.pollInterval)
+	if err != nil {
+		panic(err.Error())
+	}
 }
 
 // Partition installs iptables DROP rules so nodes in different groups cannot
 // reach each other. Rules are bidirectional. Call Heal to restore connectivity.
 func (do *Do) Partition(groups ...[]string) {
-	cutoffs := map[string][]string{}
+	type nodeInfo struct {
+		node     clusterNode
+		cutoffs  []string
+		blockIPs []string
+	}
+	nodes := map[string]*nodeInfo{}
+
 	for i, g1 := range groups {
 		for j, g2 := range groups {
 			if i >= j {
@@ -159,42 +173,63 @@ func (do *Do) Partition(groups ...[]string) {
 
 			for _, a := range g1 {
 				for _, b := range g2 {
-					nA := do.getNode(a)
-					nB := do.getNode(b)
+					nA, nB := do.getNode(a), do.getNode(b)
 					ipA, ipB := nA.ContainerIP(), nB.ContainerIP()
 
-					execOnNode(do.ctx, nA, "iptables", "-A", "INPUT", "-s", ipB, "-j", "DROP")
-					execOnNode(do.ctx, nA, "iptables", "-A", "OUTPUT", "-d", ipB, "-j", "DROP")
-					execOnNode(do.ctx, nB, "iptables", "-A", "INPUT", "-s", ipA, "-j", "DROP")
-					execOnNode(do.ctx, nB, "iptables", "-A", "OUTPUT", "-d", ipA, "-j", "DROP")
+					if nodes[a] == nil {
+						nodes[a] = &nodeInfo{node: nA}
+					}
+					if nodes[b] == nil {
+						nodes[b] = &nodeInfo{node: nB}
+					}
 
-					cutoffs[a] = append(cutoffs[a], b)
-					cutoffs[b] = append(cutoffs[b], a)
+					nodes[a].cutoffs = append(nodes[a].cutoffs, b)
+					nodes[a].blockIPs = append(nodes[a].blockIPs, ipB)
+					nodes[b].cutoffs = append(nodes[b].cutoffs, a)
+					nodes[b].blockIPs = append(nodes[b].blockIPs, ipA)
 				}
 			}
 		}
 	}
 
-	for name, cutoff := range cutoffs {
-		sort.Strings(cutoff)
-		do.getNode(name).Annotate("partitioned from: " + strings.Join(cutoff, ", "))
+	var wg sync.WaitGroup
+	for name, info := range nodes {
+		wg.Add(1)
+		go func(name string, info *nodeInfo) {
+			defer wg.Done()
+
+			sort.Strings(info.cutoffs)
+			info.node.Annotate("partitioned from: " + strings.Join(info.cutoffs, ", "))
+
+			for _, ip := range info.blockIPs {
+				execOnNode(do.ctx, info.node, "iptables", "-A", "INPUT", "-s", ip, "-j", "DROP")
+				execOnNode(do.ctx, info.node, "iptables", "-A", "OUTPUT", "-d", ip, "-j", "DROP")
+			}
+		}(name, info)
 	}
+	wg.Wait()
 
 	do.Settle(do.config.clusterSettleDuration)
 }
 
 // Heal flushes all iptables rules on every node, restoring full connectivity.
 func (do *Do) Heal() {
+	var wg sync.WaitGroup
 	do.nodes.Range(func(name string, node clusterNode) bool {
-		node.Annotate("partition healed")
+		wg.Add(1)
+		go func(name string, node clusterNode) {
+			defer wg.Done()
 
-		err := node.Exec(do.ctx, "iptables", "-F")
-		if err != nil {
-			fmt.Println(red("Error healing"), red(name), ":", err)
-		}
+			node.Annotate("partition healed")
 
+			err := node.Exec(do.ctx, "iptables", "-F")
+			if err != nil {
+				fmt.Println(red("Error healing"), red(name), ":", err)
+			}
+		}(name, node)
 		return true
 	})
+	wg.Wait()
 
 	do.Settle(do.config.clusterSettleDuration)
 }

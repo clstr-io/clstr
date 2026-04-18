@@ -1,18 +1,41 @@
 package attest
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
+
+func eventColor(event string) func(...any) string {
+	switch {
+	case event == "KILL" || event == "STOP":
+		return red
+	case event == "START":
+		return green
+	default:
+		return yellow
+	}
+}
+
+type logEntry struct {
+	T     float64 `json:"t"`
+	Node  string  `json:"node"`
+	Msg   string  `json:"msg,omitempty"`
+	Event string  `json:"event,omitempty"`
+}
 
 const (
 	dockerNetwork = "clstr-net"
@@ -72,7 +95,13 @@ func resetDockerEnv(ctx context.Context, challengeKey string, containerNames []s
 	for _, name := range containerNames {
 		exec.CommandContext(ctx, "docker", "rm", "-f", "clstr-"+challengeKey+"-"+name).Run()
 		exec.CommandContext(ctx, "docker", "volume", "rm", "clstr-"+challengeKey+"-"+name+"-data").Run()
-		os.Remove(NodeLogPath(challengeKey, name))
+	}
+
+	matches, err := filepath.Glob(filepath.Join(logDir, "clstr-"+challengeKey+"-*.log"))
+	if err == nil {
+		for _, f := range matches {
+			os.Remove(f)
+		}
 	}
 
 	exec.CommandContext(ctx, "docker", "network", "rm", dockerNetwork).Run()
@@ -86,12 +115,13 @@ func NodeLogPath(challengeKey, nodeName string) string {
 
 // containerNode is a cluster node running as a Docker container.
 type containerNode struct {
-	name       string
-	imageTag   string
-	ip         string
-	mappedPort int
-	peers      []string
-	alive      atomic.Bool
+	name        string
+	logicalName string
+	imageTag    string
+	ip          string
+	mappedPort  int
+	peers       []string
+	alive       atomic.Bool
 }
 
 func (n *containerNode) ContainerIP() string {
@@ -108,6 +138,182 @@ func (n *containerNode) IsAlive() bool {
 
 func (n *containerNode) logPath() string {
 	return filepath.Join(logDir, n.name+".log")
+}
+
+func (n *containerNode) followLogs(f *os.File, tail string) {
+	go func() {
+		defer f.Close()
+
+		pr, pw := io.Pipe()
+		args := []string{"logs", "--follow", "--timestamps"}
+		if tail != "" {
+			args = append(args, "--tail", tail)
+		}
+		args = append(args, n.name)
+		cmd := exec.Command("docker", args...)
+		cmd.Stdout = pw
+		cmd.Stderr = pw
+
+		go func() {
+			cmd.Run()
+			pw.Close()
+		}()
+
+		enc := json.NewEncoder(f)
+		scanner := bufio.NewScanner(pr)
+		for scanner.Scan() {
+			line := scanner.Text()
+			t, msg := parseDockerTimestamp(line)
+			if strings.TrimSpace(msg) == "" {
+				continue
+			}
+
+			enc.Encode(logEntry{
+				T:    float64(t.UnixNano()) / 1e9,
+				Node: n.logicalName,
+				Msg:  msg,
+			})
+		}
+	}()
+}
+
+func (n *containerNode) Logs() string {
+	entries, _ := readLogEntries(n.logPath())
+	if len(entries) == 0 {
+		return ""
+	}
+
+	t0 := entries[0].T
+	var sb strings.Builder
+	for _, e := range entries {
+		elapsed := fmt.Sprintf("+%.3fs", e.T-t0)
+		if e.Event != "" {
+			fmt.Fprintf(&sb, "%-10s  [%s]\n", elapsed, e.Event)
+		} else {
+			fmt.Fprintf(&sb, "%-10s  %s\n", elapsed, e.Msg)
+		}
+	}
+
+	return sb.String()
+}
+
+func parseDockerTimestamp(line string) (time.Time, string) {
+	i := strings.IndexByte(line, ' ')
+	if i < 0 {
+		return time.Now(), line
+	}
+
+	t, err := time.Parse(time.RFC3339Nano, line[:i])
+	if err != nil {
+		return time.Now(), line
+	}
+
+	return t, line[i+1:]
+}
+
+func readLogEntries(path string) ([]logEntry, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var entries []logEntry
+	scanner := bufio.NewScanner(bytes.NewReader(b))
+	for scanner.Scan() {
+		var e logEntry
+		if json.Unmarshal(scanner.Bytes(), &e) == nil {
+			entries = append(entries, e)
+		}
+	}
+
+	return entries, nil
+}
+
+// NodesWithLogs returns logical node names that have log files for the given challenge.
+func NodesWithLogs(challengeKey string) ([]string, error) {
+	pattern := filepath.Join(logDir, "clstr-"+challengeKey+"-*.log")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	prefix := "clstr-" + challengeKey + "-"
+	var names []string
+	for _, m := range matches {
+		base := strings.TrimSuffix(filepath.Base(m), ".log")
+		names = append(names, strings.TrimPrefix(base, prefix))
+	}
+
+	sort.Strings(names)
+	return names, nil
+}
+
+// RenderLogs reads log files for the given nodes and prints them interleaved by timestamp.
+func RenderLogs(challengeKey string, nodeNames []string) error {
+	var entries []logEntry
+	for _, name := range nodeNames {
+		es, err := readLogEntries(NodeLogPath(challengeKey, name))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+
+			return fmt.Errorf("read logs for %s: %w", name, err)
+		}
+
+		entries = append(entries, es...)
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].T < entries[j].T
+	})
+
+	if len(entries) == 0 {
+		return nil
+	}
+
+	t0 := entries[0].T
+	maxWidth := 0
+	for _, e := range entries {
+		if len(e.Node) > maxWidth {
+			maxWidth = len(e.Node)
+		}
+	}
+
+	for _, e := range entries {
+		elapsed := fmt.Sprintf("%-10s", fmt.Sprintf("+%.3fs", e.T-t0))
+		node := fmt.Sprintf("[%-*s]", maxWidth, e.Node)
+		if e.Event != "" {
+			colorFn := eventColor(e.Event)
+			fmt.Printf("%s  %s  %s\n", colorFn(node), colorFn(elapsed), colorFn("["+e.Event+"]"))
+		} else {
+			fmt.Printf("%s  %s  %s\n", bold(node), elapsed, e.Msg)
+		}
+	}
+
+	return nil
+}
+
+func (n *containerNode) Annotate(msg string) {
+	os.MkdirAll(logDir, 0755)
+	f, err := os.OpenFile(n.logPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	i := strings.Index(msg, ": ")
+	if i >= 0 {
+		msg = strings.ToUpper(msg[:i]) + ": " + msg[i+2:]
+	} else {
+		msg = strings.ToUpper(msg)
+	}
+
+	json.NewEncoder(f).Encode(logEntry{
+		T:     float64(time.Now().UnixNano()) / 1e9,
+		Node:  n.logicalName,
+		Event: msg,
+	})
 }
 
 func (n *containerNode) Start(ctx context.Context) error {
@@ -150,15 +356,7 @@ func (n *containerNode) Start(ctx context.Context) error {
 		return fmt.Errorf("open log file: %w", err)
 	}
 
-	go func() {
-		defer f.Close()
-
-		cmd := exec.Command("docker", "logs", "--follow", n.name)
-		cmd.Stdout = f
-		cmd.Stderr = f
-		cmd.Run()
-	}()
-
+	n.followLogs(f, "")
 	return nil
 }
 
@@ -188,31 +386,30 @@ func (n *containerNode) Kill(ctx context.Context) error {
 	return nil
 }
 
-func (n *containerNode) Logs() string {
-	b, err := os.ReadFile(n.logPath())
-	if err != nil {
-		return ""
+func (n *containerNode) Restart(ctx context.Context, signal syscall.Signal, timeout time.Duration) error {
+	sig := "SIGTERM"
+	if signal == syscall.SIGKILL {
+		sig = "SIGKILL"
 	}
 
-	return string(b)
-}
+	out, err := exec.CommandContext(ctx, "docker", "restart",
+		"--signal", sig,
+		"--timeout", fmt.Sprintf("%d", int(timeout.Seconds())),
+		n.name,
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker restart: %w\n%s", err, out)
+	}
 
-func (n *containerNode) Annotate(msg string) {
+	n.alive.Store(true)
+
 	f, err := os.OpenFile(n.logPath(), os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return
+		return fmt.Errorf("open log file after restart: %w", err)
 	}
-	defer f.Close()
+	n.followLogs(f, "0")
 
-	// Uppercase the label but preserve node names that follow ": ".
-	i := strings.Index(msg, ": ")
-	if i >= 0 {
-		msg = strings.ToUpper(msg[:i]) + ": " + msg[i+2:]
-	} else {
-		msg = strings.ToUpper(msg)
-	}
-
-	fmt.Fprintf(f, "\n================ %s ================\n\n", msg)
+	return nil
 }
 
 func (n *containerNode) Exec(ctx context.Context, args ...string) error {

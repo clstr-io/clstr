@@ -73,10 +73,11 @@ func (do *Do) startCluster(names ...string) {
 
 		containerName := "clstr-" + do.config.challengeKey + "-" + name
 		node := &containerNode{
-			name:     containerName,
-			imageTag: "clstr-" + do.config.challengeKey,
-			ip:       ips[name],
-			peers:    peers,
+			name:        containerName,
+			logicalName: name,
+			imageTag:    "clstr-" + do.config.challengeKey,
+			ip:          ips[name],
+			peers:       peers,
 		}
 
 		do.nodes.Set(name, node)
@@ -148,11 +149,17 @@ func (do *Do) Concurrently(n int, fn func(i int)) {
 func (do *Do) Done() {
 	do.cancel()
 
-	bg := context.Background()
+	ctx := context.Background()
+	var wg sync.WaitGroup
 	do.nodes.Range(func(_ string, node clusterNode) bool {
-		node.Stop(bg, do.config.nodeShutdownTimeout)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			node.Stop(ctx, do.config.nodeShutdownTimeout)
+		}()
 		return true
 	})
+	wg.Wait()
 }
 
 // http creates a Check for an HTTP request to the node(s) described by sel.
