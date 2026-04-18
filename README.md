@@ -27,6 +27,8 @@ Start a challenge:
 $ clstr list             # List available challenges
 $ clstr init kv-store    # Create challenge in current directory
 $ clstr test             # Test your implementation
+$ clstr logs             # View interleaved logs from all nodes
+$ clstr logs n2 n4       # View logs for specific nodes
 $ clstr next             # Advance to the next stage
 ```
 

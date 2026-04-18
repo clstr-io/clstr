@@ -47,10 +47,11 @@ func main() {
 				Action: cli.Test,
 			},
 			{
-				Name:      "logs",
-				Usage:     "Show logs for a node",
-				ArgsUsage: "<node>",
-				Action:    cli.ShowLogs,
+				Name:        "logs",
+				Usage:       "Show logs for a node or all nodes",
+				ArgsUsage:   "[node...]",
+				Description: "Shows timestamped logs interleaved across nodes. With no arguments shows all nodes. Pass node names to filter: clstr logs n2 n4",
+				Action:      cli.ShowLogs,
 			},
 			{
 				Name:    "next",
