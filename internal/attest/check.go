@@ -169,6 +169,17 @@ func (c *Check) Run() {
 	c.verify()
 }
 
+func selectorPassed(kind nodeKind, passed, total int) bool {
+	switch kind {
+	case nodeExactlyOne:
+		return passed == 1
+	case nodeAtLeastOne:
+		return passed >= 1
+	default:
+		return passed == total
+	}
+}
+
 func (c *Check) execute() bool {
 	results := make([]result, len(c.urls))
 
@@ -193,16 +204,7 @@ func (c *Check) execute() bool {
 		}
 	}
 
-	switch c.selector.kind {
-	case nodeNamed, nodeAll, nodeExcept:
-		return passed == len(results)
-	case nodeExactlyOne:
-		return passed == 1
-	case nodeAtLeastOne:
-		return passed >= 1
-	}
-
-	return false
+	return selectorPassed(c.selector.kind, passed, len(results))
 }
 
 func (c *Check) executeOne(url string, r *result) (bool, error) {
@@ -271,19 +273,8 @@ func (c *Check) verify() {
 	}
 	total := len(c.results)
 
-	switch c.selector.kind {
-	case nodeNamed, nodeAll, nodeExcept:
-		if passed == total {
-			return
-		}
-	case nodeExactlyOne:
-		if passed == 1 {
-			return
-		}
-	case nodeAtLeastOne:
-		if passed >= 1 {
-			return
-		}
+	if selectorPassed(c.selector.kind, passed, total) {
+		return
 	}
 
 	formatHelp := func() string {
