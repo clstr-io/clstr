@@ -37,6 +37,7 @@ const (
 	nodeExactlyOne                 // exactly one node across the cluster
 	nodeAtLeastOne                 // at least one node across the cluster
 	nodeAll                        // all nodes across the cluster
+	nodeExcept                     // all nodes except the named ones
 )
 
 // NodeSelector targets one or more nodes for an HTTP assertion.
@@ -66,6 +67,46 @@ func (do *Do) AtLeastOneNode(names ...string) NodeSelector {
 // If names are provided, only those nodes are checked.
 func (do *Do) AllNodes(names ...string) NodeSelector {
 	return NodeSelector{kind: nodeAll, names: names}
+}
+
+// ExceptNodes returns a selector targeting all alive nodes except those specified.
+func (do *Do) ExceptNodes(names ...string) NodeSelector {
+	return NodeSelector{kind: nodeExcept, names: names}
+}
+
+// Names resolves a selector to the node names it targets.
+func (do *Do) Names(sel NodeSelector) []string {
+	return do.resolveNames(sel)
+}
+
+// resolveNames returns the node names matched by sel.
+func (do *Do) resolveNames(sel NodeSelector) []string {
+	switch sel.kind {
+	case nodeNamed:
+		return sel.names
+	case nodeExcept:
+		excluded := make(map[string]bool, len(sel.names))
+		for _, n := range sel.names {
+			excluded[n] = true
+		}
+
+		var names []string
+		do.nodes.Range(func(name string, node clusterNode) bool {
+			if node.IsAlive() && !excluded[name] {
+				names = append(names, name)
+			}
+
+			return true
+		})
+		return names
+	default:
+		names := sel.names
+		if len(names) == 0 {
+			names = do.Nodes()
+		}
+
+		return names
+	}
 }
 
 // Nodes returns the names of all alive nodes in the cluster.
@@ -156,7 +197,7 @@ func (do *Do) Restart(name string, sig ...syscall.Signal) {
 }
 
 // Partition installs iptables DROP rules so nodes in different groups cannot
-// reach each other. Rules are bidirectional. Call Heal to restore connectivity.
+// reach each other. Rules are bidirectional.
 func (do *Do) Partition(groups ...[]string) {
 	type nodeInfo struct {
 		node     clusterNode
@@ -232,6 +273,56 @@ func (do *Do) Heal() {
 	wg.Wait()
 
 	do.Settle(do.config.clusterSettleDuration)
+}
+
+// Impair applies network impairments to outgoing traffic on the selected nodes.
+func (do *Do) Impair(sel NodeSelector, impairments ...Impairment) {
+	tcArgs := []string{"tc", "qdisc", "replace", "dev", "eth0", "root", "netem"}
+	descs := make([]string, len(impairments))
+	for i, imp := range impairments {
+		tcArgs = append(tcArgs, imp.args...)
+		descs[i] = imp.desc
+	}
+	annotation := "impaired: " + strings.Join(descs, ", ")
+
+	var wg sync.WaitGroup
+	for _, name := range do.resolveNames(sel) {
+		wg.Add(1)
+		go func(name string) {
+			defer wg.Done()
+
+			node := do.getNode(name)
+			node.Annotate(annotation)
+
+			execOnNode(do.ctx, node, tcArgs...)
+		}(name)
+	}
+	wg.Wait()
+}
+
+// Repair removes tc netem impairments from the selected nodes.
+// If no selector is given, all nodes are repaired.
+func (do *Do) Repair(sel ...NodeSelector) {
+	var names []string
+	if len(sel) == 0 {
+		names = do.Nodes()
+	} else {
+		names = do.resolveNames(sel[0])
+	}
+
+	var wg sync.WaitGroup
+	for _, name := range names {
+		wg.Add(1)
+		go func(name string) {
+			defer wg.Done()
+
+			node := do.getNode(name)
+			node.Annotate("repaired")
+
+			node.Exec(do.ctx, "tc", "qdisc", "del", "dev", "eth0", "root")
+		}(name)
+	}
+	wg.Wait()
 }
 
 // Settle pauses for the given duration to let the cluster settle.
