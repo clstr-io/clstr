@@ -31,10 +31,10 @@ func eventColor(event string) func(...any) string {
 }
 
 type logEntry struct {
-	T     float64 `json:"t"`
-	Node  string  `json:"node"`
-	Msg   string  `json:"msg,omitempty"`
-	Event string  `json:"event,omitempty"`
+	T     int64  `json:"t"`
+	Node  string `json:"node"`
+	Msg   string `json:"msg,omitempty"`
+	Event string `json:"event,omitempty"`
 }
 
 const (
@@ -169,7 +169,7 @@ func (n *containerNode) followLogs(f *os.File, tail string) {
 			}
 
 			enc.Encode(logEntry{
-				T:    float64(t.UnixNano()) / 1e9,
+				T:    t.UnixNano(),
 				Node: n.logicalName,
 				Msg:  msg,
 			})
@@ -186,7 +186,7 @@ func (n *containerNode) Logs() string {
 	t0 := entries[0].T
 	var sb strings.Builder
 	for _, e := range entries {
-		elapsed := fmt.Sprintf("+%.3fs", e.T-t0)
+		elapsed := fmt.Sprintf("+%.3fs", float64(e.T-t0)/1e9)
 		if e.Event != "" {
 			fmt.Fprintf(&sb, "%-10s  [%s]\n", elapsed, e.Event)
 		} else {
@@ -281,7 +281,7 @@ func RenderLogs(challengeKey string, nodeNames []string) error {
 	}
 
 	for _, e := range entries {
-		elapsed := fmt.Sprintf("%-10s", fmt.Sprintf("+%.3fs", e.T-t0))
+		elapsed := fmt.Sprintf("%-10s", fmt.Sprintf("+%.3fs", float64(e.T-t0)/1e9))
 		node := fmt.Sprintf("[%-*s]", maxWidth, e.Node)
 		if e.Event != "" {
 			colorFn := eventColor(e.Event)
@@ -303,7 +303,7 @@ func (n *containerNode) Annotate(msg string) {
 	defer f.Close()
 
 	json.NewEncoder(f).Encode(logEntry{
-		T:     float64(time.Now().UnixNano()) / 1e9,
+		T:     time.Now().UnixNano(),
 		Node:  n.logicalName,
 		Event: msg,
 	})
