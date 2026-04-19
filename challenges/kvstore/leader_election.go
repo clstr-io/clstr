@@ -2,6 +2,7 @@ package kvstore
 
 import (
 	"fmt"
+	"syscall"
 	"time"
 
 	. "github.com/clstr-io/clstr/internal/attest"
@@ -333,6 +334,79 @@ func LeaderElection() *Suite {
 				Hint("After healing, all nodes should converge on the same leader.\n" +
 					"When a node receives an AppendEntries or RequestVote with a higher term,\n" +
 					"it must immediately revert to follower and update its term.").
+				Run()
+		}).
+
+		// 11
+		Test("Slow Leader Steps Down and Cluster Re-elects", func(do *Do) {
+			leaderNode, leaderInfo := findLeader(do)
+			if leaderNode == "" {
+				panic("No leader node found.")
+			}
+
+			currentTerm := leaderInfo.JSON("term")
+
+			do.Impair(Node(leaderNode), Delay(2*electionTimeout))
+
+			do.GET(do.ExactlyOneNode(do.Names(do.ExceptNodes(leaderNode))...), "/cluster/info").
+				Eventually(3*electionTimeout).
+				Status(Is(200)).
+				JSON("role", Is("leader")).
+				JSON("term", GreaterThan(currentTerm)).
+				Hint("No new leader elected after the leader's outgoing traffic was delayed by 2s.\n" +
+					"Followers should time out waiting for heartbeats and start a new election.\n" +
+					"The 4 remaining nodes have quorum and must elect a new leader among themselves.\n").
+				Run()
+
+			do.Repair(Node(leaderNode))
+
+			do.GET(Node(leaderNode), "/cluster/info").
+				Eventually(3*electionTimeout).
+				Status(Is(200)).
+				JSON("role", Is("follower")).
+				JSON("term", GreaterThan(currentTerm)).
+				Hint(fmt.Sprintf("Repaired node %s should step down and rejoin as follower.\n"+
+					"When it receives an AppendEntries from the new leader with a higher term,\n"+
+					"it must immediately revert to follower and update its term.", leaderNode)).
+				Run()
+		}).
+
+		// 12
+		Test("Election Completes Under Packet Loss", func(do *Do) {
+			leaderNode, leaderInfo := findLeader(do)
+			if leaderNode == "" {
+				panic("No leader node found.")
+			}
+
+			currentTerm := leaderInfo.JSON("term")
+
+			do.Impair(do.AllNodes(), Loss(20))
+			do.Restart(leaderNode, syscall.SIGKILL)
+
+			do.GET(do.ExactlyOneNode(), "/cluster/info").
+				Eventually(5*electionTimeout).
+				Status(Is(200)).
+				JSON("role", Is("leader")).
+				JSON("term", GreaterThan(currentTerm)).
+				Hint(fmt.Sprintf("No leader elected under 20%% packet loss after %s was restarted.\n"+
+					"At this loss rate, a candidate should be able to collect a majority of votes.", leaderNode)).
+				Run()
+
+			do.Repair()
+
+			newLeaderNode, newLeaderInfo := findLeader(do)
+			if newLeaderNode == "" {
+				panic("No leader node found after repair.")
+			}
+
+			newLeaderAddr := newLeaderInfo.JSON("id")
+
+			do.GET(do.AllNodes(), "/cluster/info").
+				Eventually(3*electionTimeout).
+				Status(Is(200)).
+				JSON("leader", Is(newLeaderAddr)).
+				Hint(fmt.Sprintf("Cluster did not converge on a single leader (%s) after packet loss was removed.\n"+
+					"All nodes should agree on the same leader once the network is healthy.", newLeaderAddr)).
 				Run()
 		})
 }

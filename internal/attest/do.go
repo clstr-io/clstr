@@ -90,6 +90,7 @@ func (do *Do) startCluster(names ...string) {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
+
 			defer func() {
 				err := recover()
 				if err != nil {
@@ -121,6 +122,7 @@ func (do *Do) Concurrently(n int, fn func(i int)) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
+
 			defer func() {
 				err := recover()
 				if err != nil {
@@ -147,19 +149,19 @@ func (do *Do) Concurrently(n int, fn func(i int)) {
 // so they can be inspected after a failure; they will be cleaned up at the start
 // of the next run.
 func (do *Do) Done() {
-	do.cancel()
-
-	ctx := context.Background()
 	var wg sync.WaitGroup
-	do.nodes.Range(func(_ string, node clusterNode) bool {
+	do.nodes.Range(func(name string, _ clusterNode) bool {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			node.Stop(ctx, do.config.nodeShutdownTimeout)
+
+			do.Stop(name)
 		}()
 		return true
 	})
 	wg.Wait()
+
+	do.cancel()
 }
 
 // http creates a Check for an HTTP request to the node(s) described by sel.
@@ -185,21 +187,10 @@ func (do *Do) http(sel NodeSelector, method, path string, args ...any) *Check {
 		selector: sel,
 	}
 
-	if sel.kind == nodeNamed {
-		node := do.getNode(sel.names[0])
-		a.urls = []string{fmt.Sprintf("http://127.0.0.1:%d%s", node.MappedPort(), path)}
-		a.nodeNames = []string{sel.names[0]}
-	} else {
-		names := sel.names
-		if len(names) == 0 {
-			names = do.Nodes()
-		}
-
-		for _, name := range names {
-			node := do.getNode(name)
-			a.urls = append(a.urls, fmt.Sprintf("http://127.0.0.1:%d%s", node.MappedPort(), path))
-			a.nodeNames = append(a.nodeNames, name)
-		}
+	for _, name := range do.resolveNames(sel) {
+		node := do.getNode(name)
+		a.urls = append(a.urls, fmt.Sprintf("http://127.0.0.1:%d%s", node.MappedPort(), path))
+		a.nodeNames = append(a.nodeNames, name)
 	}
 
 	return a

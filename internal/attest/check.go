@@ -194,7 +194,7 @@ func (c *Check) execute() bool {
 	}
 
 	switch c.selector.kind {
-	case nodeNamed, nodeAll:
+	case nodeNamed, nodeAll, nodeExcept:
 		return passed == len(results)
 	case nodeExactlyOne:
 		return passed == 1
@@ -272,7 +272,7 @@ func (c *Check) verify() {
 	total := len(c.results)
 
 	switch c.selector.kind {
-	case nodeNamed, nodeAll:
+	case nodeNamed, nodeAll, nodeExcept:
 		if passed == total {
 			return
 		}
@@ -313,7 +313,7 @@ func (c *Check) verify() {
 		case nodeAtLeastOne:
 			desc = fmt.Sprintf("0 of %d nodes passed (expected at least 1)", total)
 			relevant = c.results
-		case nodeAll:
+		case nodeAll, nodeExcept:
 			desc = fmt.Sprintf("%d of %d nodes passed (expected all %d)", passed, total, total)
 			for _, r := range c.results {
 				if !r.passed {
@@ -373,9 +373,10 @@ func formatResult(r result) string {
 
 	if r.err != nil {
 		if errors.Is(r.err, context.DeadlineExceeded) {
-			return fmt.Sprintf("%s → timed out", prefix)
+			return fmt.Sprintf("%s → %s", prefix, red("timed out"))
 		}
-		return fmt.Sprintf("%s → %s", prefix, r.err.Error())
+
+		return fmt.Sprintf("%s → %s", prefix, red(r.err.Error()))
 	}
 
 	if r.failure == "" {
@@ -386,7 +387,7 @@ func formatResult(r result) string {
 		return fmt.Sprintf("%s → %s", prefix, colorStatus(r.status))
 	}
 
-	return fmt.Sprintf("%s → %s\n    %s\n      %s", prefix, colorStatus(r.status), r.failure, prettyBody(r.body, "      "))
+	return fmt.Sprintf("%s → %s\n    %s\n      %s", prefix, colorStatus(r.status), red(r.failure), prettyBody(r.body, "      "))
 }
 
 func (c *Check) reportFailure(r result, formatHelp func() string) {
@@ -398,7 +399,7 @@ func (c *Check) reportFailure(r result, formatHelp func() string) {
 			errMsg = fmt.Sprintf("Request timed out: server did not respond within %s", c.config.requestTimeout)
 		}
 
-		panic(fmt.Sprintf("%s\n  %s%s", prefix, errMsg, formatHelp()))
+		panic(fmt.Sprintf("%s\n  %s%s", prefix, red(errMsg), formatHelp()))
 	}
 
 	prefix = fmt.Sprintf("%s → %s", prefix, colorStatus(r.status))
