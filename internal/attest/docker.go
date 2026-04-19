@@ -302,13 +302,6 @@ func (n *containerNode) Annotate(msg string) {
 	}
 	defer f.Close()
 
-	i := strings.Index(msg, ": ")
-	if i >= 0 {
-		msg = strings.ToUpper(msg[:i]) + ": " + msg[i+2:]
-	} else {
-		msg = strings.ToUpper(msg)
-	}
-
 	json.NewEncoder(f).Encode(logEntry{
 		T:     float64(time.Now().UnixNano()) / 1e9,
 		Node:  n.logicalName,

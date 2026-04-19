@@ -136,7 +136,7 @@ func (do *Do) getNode(name string) clusterNode {
 // Start starts a previously stopped or killed node.
 func (do *Do) Start(name string) {
 	node := do.getNode(name)
-	node.Annotate("start")
+	node.Annotate("START")
 
 	err := node.Start(do.ctx)
 	if err != nil {
@@ -153,29 +153,29 @@ func (do *Do) Start(name string) {
 // Stop sends SIGTERM to the node, then SIGKILL after the shutdown timeout.
 func (do *Do) Stop(name string) {
 	node := do.getNode(name)
-	node.Annotate("stop")
+	node.Annotate("STOP")
 
 	err := node.Stop(do.ctx, do.config.nodeShutdownTimeout)
 	if err != nil {
-		fmt.Println(red("Error stopping"), red(name))
+		fmt.Println(red("Error stopping"), red(name), ":", err)
 	}
 }
 
 // Kill sends SIGKILL to the node immediately.
 func (do *Do) Kill(name string) {
 	node := do.getNode(name)
-	node.Annotate("kill")
+	node.Annotate("KILL")
 
 	err := node.Kill(do.ctx)
 	if err != nil {
-		fmt.Println(red("Error killing"), red(name))
+		fmt.Println(red("Error killing"), red(name), ":", err)
 	}
 }
 
 // Restart restarts the node. Pass syscall.SIGKILL to crash immediately instead of graceful shutdown.
 func (do *Do) Restart(name string, sig ...syscall.Signal) {
 	node := do.getNode(name)
-	node.Annotate("restart")
+	node.Annotate("RESTART")
 
 	signal := syscall.SIGTERM
 	timeout := do.config.nodeShutdownTimeout
@@ -240,7 +240,7 @@ func (do *Do) Partition(groups ...[]string) {
 			defer wg.Done()
 
 			sort.Strings(info.cutoffs)
-			info.node.Annotate("partitioned from: " + strings.Join(info.cutoffs, ", "))
+			info.node.Annotate("PARTITIONED FROM: " + strings.Join(info.cutoffs, ", "))
 
 			for _, ip := range info.blockIPs {
 				execOnNode(do.ctx, info.node, "iptables", "-A", "INPUT", "-s", ip, "-j", "DROP")
@@ -261,7 +261,7 @@ func (do *Do) Heal() {
 		go func(name string, node clusterNode) {
 			defer wg.Done()
 
-			node.Annotate("partition healed")
+			node.Annotate("PARTITION HEALED")
 
 			err := node.Exec(do.ctx, "iptables", "-F")
 			if err != nil {
@@ -283,7 +283,7 @@ func (do *Do) Impair(sel NodeSelector, impairments ...Impairment) {
 		tcArgs = append(tcArgs, imp.args...)
 		descs[i] = imp.desc
 	}
-	annotation := "impaired: " + strings.Join(descs, ", ")
+	annotation := "IMPAIRED: " + strings.Join(descs, ", ")
 
 	var wg sync.WaitGroup
 	for _, name := range do.resolveNames(sel) {
@@ -317,7 +317,7 @@ func (do *Do) Repair(sel ...NodeSelector) {
 			defer wg.Done()
 
 			node := do.getNode(name)
-			node.Annotate("repaired")
+			node.Annotate("REPAIRED")
 
 			node.Exec(do.ctx, "tc", "qdisc", "del", "dev", "eth0", "root")
 		}(name)
