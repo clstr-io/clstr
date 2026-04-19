@@ -43,14 +43,6 @@ func createChallengeFiles(challenge *registry.Challenge, targetPath, lang string
 		return fmt.Errorf("Failed to create clstr.yaml: %w", err)
 	}
 
-	// .gitignore
-	gitignorePath := filepath.Join(targetPath, ".gitignore")
-	gitignoreContent := ``
-	err = os.WriteFile(gitignorePath, []byte(gitignoreContent), 0644)
-	if err != nil {
-		return fmt.Errorf("Failed to create .gitignore: %w", err)
-	}
-
 	// Dockerfile
 	dockerfile, err := images.Dockerfile(lang)
 	if err != nil {
@@ -107,7 +99,6 @@ func InitChallenge(ctx context.Context, cmd *commands.Command) error {
 	fmt.Println("  Dockerfile      - Build and run your server in a container")
 	fmt.Println("  README.md      - Challenge overview and requirements")
 	fmt.Println("  clstr.yaml     - Tracks your progress")
-	fmt.Println("  .gitignore     - Files to .gitignore")
 	fmt.Println()
 
 	firstStageKey := challenge.StageOrder[0]
