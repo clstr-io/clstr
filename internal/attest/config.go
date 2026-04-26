@@ -8,7 +8,7 @@ import (
 type config struct {
 	challengeKey          string
 	nodes                 []string
-	nodeStartTimeout      time.Duration
+	nodeStartupTimeout    time.Duration
 	nodeShutdownTimeout   time.Duration
 	clusterSettleDuration time.Duration
 	pollInterval          time.Duration
@@ -17,7 +17,7 @@ type config struct {
 
 func defaultConfig() *config {
 	return &config{
-		nodeStartTimeout:    10 * time.Second,
+		nodeStartupTimeout:  10 * time.Second,
 		nodeShutdownTimeout: 5 * time.Second,
 		pollInterval:        time.Second,
 		requestTimeout:      500 * time.Millisecond,
@@ -48,10 +48,10 @@ func WithCluster(n int) Option {
 	}
 }
 
-// WithNodeStartTimeout sets how long to wait for a node to accept connections after starting.
-func WithNodeStartTimeout(d time.Duration) Option {
+// WithNodeStartupTimeout sets how long to wait for a node to accept connections after starting.
+func WithNodeStartupTimeout(d time.Duration) Option {
 	return func(c *config) {
-		c.nodeStartTimeout = d
+		c.nodeStartupTimeout = d
 	}
 }
 
