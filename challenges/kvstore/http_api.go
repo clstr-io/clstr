@@ -22,6 +22,7 @@ func HTTPAPI() *Suite {
 			for country, capital := range capitals {
 				do.PUT(Node("n1"), fmt.Sprintf("/kv/%s:capital", country), capital).
 					Status(Is(200)).
+					Header("Content-Type", Contains("text/plain")).
 					Hint("Your server should accept PUT requests.\n" +
 						"Ensure your HTTP handler processes PUT requests to /kv/{key}.").
 					Run()
@@ -35,6 +36,7 @@ func HTTPAPI() *Suite {
 
 			do.GET(Node("n1"), "/kv/tanzania:capital").
 				Status(Is(200)).
+				Header("Content-Type", Contains("text/plain")).
 				Body(Is("Dodoma")).
 				Hint("Your server should return the updated value after overwrite.\n" +
 					"Ensure GET requests return the most recently stored value.").
@@ -72,6 +74,7 @@ func HTTPAPI() *Suite {
 		Test("PUT Rejects Empty Keys and Values", func(do *Do) {
 			do.PUT(Node("n1"), "/kv/empty").
 				Status(Is(400)).
+				Header("Content-Type", Contains("text/plain")).
 				Body(Matches("^value cannot be empty\n?$")).
 				Hint("Your server should reject empty values.\n" +
 					"Add validation to return 400 Bad Request for empty values.").
@@ -79,6 +82,7 @@ func HTTPAPI() *Suite {
 
 			do.PUT(Node("n1"), "/kv/", "some_value").
 				Status(Is(400)).
+				Header("Content-Type", Contains("text/plain")).
 				Body(Matches("^key cannot be empty\n?$")).
 				Hint("Your server should reject empty keys.\n" +
 					"Add validation to return 400 Bad Request for empty keys.").
@@ -89,6 +93,7 @@ func HTTPAPI() *Suite {
 		Test("GET Returns Stored Values", func(do *Do) {
 			do.GET(Node("n1"), "/kv/kenya:capital").
 				Status(Is(200)).
+				Header("Content-Type", Contains("text/plain")).
 				Body(Is("Nairobi")).
 				Hint("Your server should return stored values with GET requests.\n" +
 					"Ensure your key-value storage and retrieval logic is working correctly.").
@@ -129,6 +134,7 @@ func HTTPAPI() *Suite {
 		Test("GET Rejects Missing and Invalid Keys", func(do *Do) {
 			do.GET(Node("n1"), "/kv/nonexistent:key").
 				Status(Is(404)).
+				Header("Content-Type", Contains("text/plain")).
 				Body(Matches("^key not found\n?$")).
 				Hint("Your server should return 404 Not Found when a key doesn't exist.\n" +
 					"Check your key lookup logic and error handling.").
@@ -143,6 +149,7 @@ func HTTPAPI() *Suite {
 
 			do.GET(Node("n1"), "/kv/").
 				Status(Is(400)).
+				Header("Content-Type", Contains("text/plain")).
 				Body(Matches("^key cannot be empty\n?$")).
 				Hint("Your server should reject empty keys.\n" +
 					"Add validation to return 400 Bad Request for empty keys.").
@@ -323,6 +330,7 @@ func HTTPAPI() *Suite {
 			} {
 				check.
 					Status(Is(405)).
+					Header("Content-Type", Contains("text/plain")).
 					Body(Matches("^method not allowed\n?$")).
 					Hint("Your server should reject unsupported HTTP methods on /kv/{key}.\n" +
 						"Add logic to return 405 Method Not Allowed for unsupported methods.").
@@ -337,6 +345,7 @@ func HTTPAPI() *Suite {
 			} {
 				check.
 					Status(Is(405)).
+					Header("Content-Type", Contains("text/plain")).
 					Body(Matches("^method not allowed\n?$")).
 					Hint("Your server should reject unsupported HTTP methods on /clear.\n" +
 						"Only DELETE /clear should be allowed. Return 405 Method Not Allowed for other methods.").

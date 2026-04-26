@@ -55,6 +55,7 @@ func LeaderElection() *Suite {
 		Test("/cluster/info Returns Cluster State", func(do *Do) {
 			do.GET(do.AllNodes(), "/cluster/info").
 				Status(Is(200)).
+				Header("Content-Type", Contains("application/json")).
 				JSON("id", Matches(`^10\.0\.42\.\d+:8080$`)).
 				JSON("role", OneOf("leader", "follower", "candidate")).
 				JSON("peers", HasLen[string](4)).
@@ -169,12 +170,14 @@ func LeaderElection() *Suite {
 
 			do.PUT(Node(leaderNode), "/kv/leader:key", "initial").
 				Status(Is(200)).
+				Header("Content-Type", Contains("text/plain")).
 				Hint("The leader should accept PUT requests.\n" +
 					"Ensure your leader node processes write operations.").
 				Run()
 
 			do.GET(Node(leaderNode), "/kv/leader:key").
 				Status(Is(200)).
+				Header("Content-Type", Contains("text/plain")).
 				Body(Is("initial")).
 				Hint("The leader should return stored values.\n" +
 					"Ensure your leader node processes read operations.").
@@ -201,6 +204,7 @@ func LeaderElection() *Suite {
 
 			do.GET(Node(leaderNode), "/kv/leader:key").
 				Status(Is(404)).
+				Header("Content-Type", Contains("text/plain")).
 				Hint("The leader should return 404 after a key is deleted.\n" +
 					"Ensure delete operations are applied correctly.").
 				Run()
