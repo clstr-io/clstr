@@ -219,24 +219,32 @@ func LeaderElection() *Suite {
 				panic("No leader node found.")
 			}
 
-			currentTerm := leaderInfo.JSON("term")
+			prevTerm := leaderInfo.JSON("term")
 			do.Kill(prevLeaderNode)
 
 			do.GET(do.ExactlyOneNode(), "/cluster/info").
 				Eventually(3*electionTimeout).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
-				Hint("Expected exactly one new leader (found 0 or more than 1).\n" +
+				JSON("term", GreaterThan(prevTerm)).
+				Hint("Expected exactly one new leader with a higher term (found 0 or more than 1).\n" +
 					"If no leader: ensure followers start an election when heartbeats stop.\n" +
-					"If multiple leaders: each node must grant at most one vote per term.").
+					"If multiple leaders: each node must grant at most one vote per term.\n" +
+					"If term did not increment: candidates must increment currentTerm before starting an election.").
 				Run()
+
+			newLeaderNode, newLeaderInfo := findLeader(do)
+			if newLeaderNode == "" {
+				panic("No new leader found after previous leader was killed.")
+			}
+			newLeaderID := newLeaderInfo.JSON("id")
 
 			do.GET(do.AllNodes(), "/cluster/info").
 				Eventually(3*electionTimeout).
 				Status(Is(200)).
-				JSON("term", GreaterThan(currentTerm)).
-				Hint(fmt.Sprintf("Term should increment after a new election (was %s).\n"+
-					"Candidates must increment currentTerm before starting an election.", currentTerm)).
+				JSON("leader", Is(newLeaderID)).
+				Hint(fmt.Sprintf("All surviving nodes should agree on the new leader (%s).\n"+
+					"Followers learn the leader's address from the leader-id field in AppendEntries.", newLeaderID)).
 				Run()
 
 			do.Start(prevLeaderNode)
@@ -244,11 +252,11 @@ func LeaderElection() *Suite {
 			do.GET(Node(prevLeaderNode), "/cluster/info").
 				Eventually(3*electionTimeout).
 				Status(Is(200)).
-				JSON("term", GreaterThan(currentTerm)).
+				JSON("term", GreaterThan(prevTerm)).
 				JSON("role", Is("follower")).
-				JSON("leader", Matches(`^10\.0\.42\.\d+:8080$`)).
-				Hint(fmt.Sprintf("Restarted node should catch up to the current term (was %s), become a follower, and learn the current leader.\n"+
-					"The leader's heartbeats will update the rejoining node's term and leader.", currentTerm)).
+				JSON("leader", Is(newLeaderID)).
+				Hint(fmt.Sprintf("Restarted node should catch up to the current term (was %s), become a follower, and converge on the current leader (%s).\n"+
+					"The leader's heartbeats will update the rejoining node's term and leader.", prevTerm, newLeaderID)).
 				Run()
 		}).
 
