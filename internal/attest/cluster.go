@@ -178,7 +178,6 @@ func (do *Do) Kill(name string) {
 // Restart restarts the node. Pass syscall.SIGKILL to crash immediately instead of graceful shutdown.
 func (do *Do) Restart(name string, sig ...syscall.Signal) {
 	node := do.getNode(name)
-	node.Annotate("RESTART")
 
 	signal := syscall.SIGTERM
 	timeout := do.config.nodeShutdownTimeout
@@ -186,6 +185,12 @@ func (do *Do) Restart(name string, sig ...syscall.Signal) {
 		signal = syscall.SIGKILL
 		timeout = 0
 	}
+
+	annotation := "RESTART: STOP"
+	if signal == syscall.SIGKILL {
+		annotation = "RESTART: KILL"
+	}
+	node.Annotate(annotation)
 
 	err := node.Restart(do.ctx, signal, timeout)
 	if err != nil {
