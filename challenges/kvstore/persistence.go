@@ -3,6 +3,7 @@ package kvstore
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	. "github.com/clstr-io/clstr/internal/attest"
 )
@@ -10,6 +11,7 @@ import (
 func Persistence() *Suite {
 	return New(
 		WithCluster(1),
+		WithRequestTimeout(time.Second),
 	).
 
 		// 1
@@ -91,12 +93,12 @@ func Persistence() *Suite {
 			}
 
 			allHistoricalData := map[string]string{
-				"wal:basic":         "initial",
-				"wal:updated":       "v2",
-				"cycle:restart_1":   "restart_data_1",
-				"cycle:restart_2":   "restart_data_2",
-				"cycle:restart_3":   "restart_data_3",
-				"cycle:restart_4":   "restart_data_4",
+				"wal:basic":       "initial",
+				"wal:updated":     "v2",
+				"cycle:restart_1": "restart_data_1",
+				"cycle:restart_2": "restart_data_2",
+				"cycle:restart_3": "restart_data_3",
+				"cycle:restart_4": "restart_data_4",
 			}
 			for key, expectedValue := range allHistoricalData {
 				do.GET(Node("n1"), fmt.Sprintf("/kv/%s", key)).

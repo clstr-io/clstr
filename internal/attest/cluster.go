@@ -144,7 +144,10 @@ func (do *Do) Start(name string) {
 	}
 
 	containerName := "clstr-" + do.config.challengeKey + "-" + name
-	err = waitUntilNodeReady(do.ctx, name, containerName, node, do.config.nodeStartupTimeout, do.config.pollInterval)
+	err = waitUntilNodeReady(
+		do.ctx, name, containerName, node,
+		do.config.nodeStartupTimeout, do.config.pollInterval, do.config.requestTimeout,
+	)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -190,7 +193,10 @@ func (do *Do) Restart(name string, sig ...syscall.Signal) {
 	}
 
 	containerName := "clstr-" + do.config.challengeKey + "-" + name
-	err = waitUntilNodeReady(do.ctx, name, containerName, node, do.config.nodeStartupTimeout, do.config.pollInterval)
+	err = waitUntilNodeReady(
+		do.ctx, name, containerName, node,
+		do.config.nodeStartupTimeout, do.config.pollInterval, do.config.requestTimeout,
+	)
 	if err != nil {
 		panic(err.Error())
 	}
