@@ -76,9 +76,10 @@ type result struct {
 
 // Check describes an HTTP request and the conditions its response must satisfy.
 type Check struct {
-	timing  timing
-	timeout time.Duration
-	hint    string
+	timing           timing
+	timeout          time.Duration
+	hint             string
+	latencyCollector *latencyCollector
 
 	ctx    context.Context
 	config *config
@@ -208,6 +209,14 @@ func (c *Check) execute() bool {
 }
 
 func (c *Check) executeOne(url string, r *result) (bool, error) {
+	start := time.Now()
+	var passed bool
+	defer func() {
+		if c.latencyCollector != nil {
+			c.latencyCollector.record(r.node, time.Since(start), passed)
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(c.ctx, c.config.requestTimeout)
 	defer cancel()
 
@@ -261,6 +270,7 @@ func (c *Check) executeOne(url string, r *result) (bool, error) {
 		return false, nil
 	}
 
+	passed = true
 	return true, nil
 }
 

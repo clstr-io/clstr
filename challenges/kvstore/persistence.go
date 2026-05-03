@@ -12,6 +12,7 @@ func Persistence() *Suite {
 	return New(
 		WithCluster(1),
 		WithRequestTimeout(time.Second),
+		WithConcurrencyLimit(50),
 	).
 
 		// 1

@@ -3,6 +3,7 @@ package attest
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/fatih/color"
 )
@@ -11,6 +12,7 @@ var (
 	green     = color.New(color.FgGreen).SprintFunc()
 	red       = color.New(color.FgRed).SprintFunc()
 	yellow    = color.New(color.FgYellow).SprintFunc()
+	cyan      = color.New(color.FgCyan).SprintFunc()
 	bold      = color.New(color.Bold).SprintFunc()
 	checkMark = green("✓")
 	crossMark = red("✗")
@@ -74,6 +76,10 @@ func (s *Suite) Run(ctx context.Context) bool {
 			}()
 			do.startCluster(s.config.nodes...)
 		}()
+
+		if !failed {
+			do.annotateCluster("CLUSTER READY")
+		}
 	}
 
 	if !failed && s.setupFn != nil {
@@ -104,13 +110,15 @@ func (s *Suite) Run(ctx context.Context) bool {
 		default:
 		}
 
+		do.annotateCluster("TEST: " + test.Name)
+		start := time.Now()
 		func() {
 			defer func() {
 				err := recover()
 				if err != nil {
 					failed = true
 
-					fmt.Printf("%s %s\n", crossMark, test.Name)
+					fmt.Printf("%s %s %s\n", crossMark, test.Name, "("+fmtDuration(time.Since(start))+")")
 					fmt.Printf("\n%s\n", err)
 				}
 			}()
@@ -119,7 +127,7 @@ func (s *Suite) Run(ctx context.Context) bool {
 		}()
 
 		if !failed {
-			fmt.Printf("%s %s\n", checkMark, test.Name)
+			fmt.Printf("%s %s %s\n", checkMark, test.Name, "("+fmtDuration(time.Since(start))+")")
 		}
 	}
 
