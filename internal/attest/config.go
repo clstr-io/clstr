@@ -13,14 +13,16 @@ type config struct {
 	clusterSettleDuration time.Duration
 	pollInterval          time.Duration
 	requestTimeout        time.Duration
+	concurrencyLimit      int
 }
 
 func defaultConfig() *config {
 	return &config{
 		nodeStartupTimeout:  10 * time.Second,
 		nodeShutdownTimeout: 5 * time.Second,
-		pollInterval:        time.Second,
+		pollInterval:        250 * time.Millisecond,
 		requestTimeout:      500 * time.Millisecond,
+		concurrencyLimit:    50,
 	}
 }
 
@@ -81,5 +83,17 @@ func WithPollInterval(d time.Duration) Option {
 func WithRequestTimeout(d time.Duration) Option {
 	return func(c *config) {
 		c.requestTimeout = d
+	}
+}
+
+// WithConcurrencyLimit sets the maximum number of goroutines that Concurrently
+// runs at once, and sizes the HTTP connection pool to match.
+func WithConcurrencyLimit(n int) Option {
+	if n < 1 {
+		panic("concurrency limit must be at least 1")
+	}
+
+	return func(c *config) {
+		c.concurrencyLimit = n
 	}
 }

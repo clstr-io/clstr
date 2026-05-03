@@ -28,8 +28,8 @@ func newDo(ctx context.Context, cfg *config) *Do {
 		config: cfg,
 		client: &http.Client{
 			Transport: &http.Transport{
-				MaxIdleConnsPerHost: 100,
-				MaxConnsPerHost:     200,
+				MaxIdleConns:        0,
+				MaxIdleConnsPerHost: cfg.concurrencyLimit,
 			},
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
@@ -112,16 +112,20 @@ func (do *Do) startCluster(names ...string) {
 	}
 }
 
-// Concurrently runs fn n times in parallel, passing each invocation a 1-based index.
+// Concurrently runs fn n times in parallel.
 func (do *Do) Concurrently(n int, fn func(i int)) {
+	sem := make(chan struct{}, do.config.concurrencyLimit)
+
 	var wg sync.WaitGroup
 	var panicErr any
 	var panicMu sync.Mutex
 
 	for i := 1; i <= n; i++ {
+		sem <- struct{}{}
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
+			defer func() { <-sem }()
 
 			defer func() {
 				err := recover()

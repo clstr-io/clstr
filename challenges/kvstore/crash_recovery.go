@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"syscall"
+	"time"
 
 	. "github.com/clstr-io/clstr/internal/attest"
 )
@@ -11,6 +12,8 @@ import (
 func CrashRecovery() *Suite {
 	return New(
 		WithCluster(1),
+		WithRequestTimeout(time.Second),
+		WithConcurrencyLimit(50),
 	).
 
 		// 1

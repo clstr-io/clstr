@@ -140,14 +140,14 @@ func (n *containerNode) logPath() string {
 	return filepath.Join(logDir, n.name+".log")
 }
 
-func (n *containerNode) followLogs(f *os.File, tail string) {
+func (n *containerNode) followLogs(f *os.File, since time.Time) {
 	go func() {
 		defer f.Close()
 
 		pr, pw := io.Pipe()
 		args := []string{"logs", "--follow", "--timestamps"}
-		if tail != "" {
-			args = append(args, "--tail", tail)
+		if !since.IsZero() {
+			args = append(args, "--since", since.UTC().Format(time.RFC3339Nano))
 		}
 		args = append(args, n.name)
 		cmd := exec.Command("docker", args...)
@@ -221,7 +221,8 @@ func readLogEntries(path string) ([]logEntry, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(b))
 	for scanner.Scan() {
 		var e logEntry
-		if json.Unmarshal(scanner.Bytes(), &e) == nil {
+		err := json.Unmarshal(scanner.Bytes(), &e)
+		if err == nil {
 			entries = append(entries, e)
 		}
 	}
@@ -349,7 +350,7 @@ func (n *containerNode) Start(ctx context.Context) error {
 		return fmt.Errorf("open log file: %w", err)
 	}
 
-	n.followLogs(f, "")
+	n.followLogs(f, time.Time{})
 	return nil
 }
 
@@ -385,6 +386,7 @@ func (n *containerNode) Restart(ctx context.Context, signal syscall.Signal, time
 		sig = "SIGKILL"
 	}
 
+	since := time.Now()
 	out, err := exec.CommandContext(ctx, "docker", "restart",
 		"--signal", sig,
 		"--timeout", fmt.Sprintf("%d", int(timeout.Seconds())),
@@ -400,7 +402,7 @@ func (n *containerNode) Restart(ctx context.Context, signal syscall.Signal, time
 	if err != nil {
 		return fmt.Errorf("open log file after restart: %w", err)
 	}
-	n.followLogs(f, "0")
+	n.followLogs(f, since)
 
 	return nil
 }
@@ -415,11 +417,24 @@ func (n *containerNode) Exec(ctx context.Context, args ...string) error {
 	return nil
 }
 
-func waitUntilNodeReady(ctx context.Context, logicalName, containerName string, node clusterNode, timeout, pollInterval time.Duration) error {
+func waitUntilNodeReady(
+	ctx context.Context,
+	logicalName, containerName string,
+	node clusterNode,
+	timeout, pollInterval, requestTimeout time.Duration,
+) error {
 	url := fmt.Sprintf("http://127.0.0.1:%d/health", node.MappedPort())
 
 	succeeded := eventually(ctx, func() bool {
-		resp, err := http.Get(url)
+		reqCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+		if err != nil {
+			return false
+		}
+
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return false
 		}
