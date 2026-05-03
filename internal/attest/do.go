@@ -4,16 +4,19 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/clstr-io/clstr/pkg/threadsafe"
 )
 
 // Do provides the test harness and acts as the test runner.
 type Do struct {
-	nodes  *threadsafe.Map[string, clusterNode]
-	config *config
-	client *http.Client
+	nodes           *threadsafe.Map[string, clusterNode]
+	config          *config
+	client          *http.Client
+	activeCollector atomic.Pointer[latencyCollector]
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -112,8 +115,16 @@ func (do *Do) startCluster(names ...string) {
 	}
 }
 
+func (do *Do) annotateCluster(msg string) {
+	writeClusterEvent(do.config.challengeKey, msg)
+}
+
 // Concurrently runs fn n times in parallel.
 func (do *Do) Concurrently(n int, fn func(i int)) {
+	lc := &latencyCollector{}
+	do.activeCollector.Store(lc)
+	defer do.activeCollector.Store(nil)
+
 	sem := make(chan struct{}, do.config.concurrencyLimit)
 
 	var wg sync.WaitGroup
@@ -143,9 +154,32 @@ func (do *Do) Concurrently(n int, fn func(i int)) {
 	}
 
 	wg.Wait()
+	do.logConcurrentlyStats(lc)
 
 	if panicErr != nil {
 		panic(panicErr)
+	}
+}
+
+func (do *Do) logConcurrentlyStats(lc *latencyCollector) {
+	byNode := make(map[string][]latencySample)
+	for _, s := range lc.samples {
+		byNode[s.node] = append(byNode[s.node], s)
+	}
+
+	nodes := make([]string, 0, len(byNode))
+	for name := range byNode {
+		nodes = append(nodes, name)
+	}
+	sort.Strings(nodes)
+
+	for _, name := range nodes {
+		node, ok := do.nodes.Get(name)
+		if !ok {
+			continue
+		}
+
+		node.Annotate(computeStats(byNode[name]).String())
 	}
 }
 
@@ -181,14 +215,15 @@ func (do *Do) http(sel NodeSelector, method, path string, args ...any) *Check {
 	}
 
 	a := &Check{
-		timing:   timingImmediate,
-		ctx:      do.ctx,
-		config:   do.config,
-		client:   do.client,
-		method:   method,
-		headers:  headers,
-		body:     body,
-		selector: sel,
+		timing:           timingImmediate,
+		ctx:              do.ctx,
+		config:           do.config,
+		client:           do.client,
+		latencyCollector: do.activeCollector.Load(),
+		method:           method,
+		headers:          headers,
+		body:             body,
+		selector:         sel,
 	}
 
 	for _, name := range do.resolveNames(sel) {

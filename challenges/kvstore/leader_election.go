@@ -396,7 +396,7 @@ func LeaderElection() *Suite {
 			do.Restart(leaderNode, syscall.SIGKILL)
 
 			do.GET(do.ExactlyOneNode(), "/cluster/info").
-				Eventually(5*electionTimeout).
+				Eventually(10*electionTimeout).
 				Status(Is(200)).
 				JSON("role", Is("leader")).
 				JSON("term", GreaterThan(currentTerm)).

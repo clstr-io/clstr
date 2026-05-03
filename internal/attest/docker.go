@@ -25,6 +25,8 @@ func eventColor(event string) func(...any) string {
 		return red
 	case event == "START":
 		return green
+	case strings.HasPrefix(event, "TEST:"):
+		return cyan
 	default:
 		return yellow
 	}
@@ -242,7 +244,10 @@ func NodesWithLogs(challengeKey string) ([]string, error) {
 	var names []string
 	for _, m := range matches {
 		base := strings.TrimSuffix(filepath.Base(m), ".log")
-		names = append(names, strings.TrimPrefix(base, prefix))
+		name := strings.TrimPrefix(base, prefix)
+		if name != "cluster" {
+			names = append(names, name)
+		}
 	}
 
 	sort.Strings(names)
@@ -265,9 +270,22 @@ func RenderLogs(challengeKey string, nodeNames []string) error {
 		entries = append(entries, es...)
 	}
 
+	if len(entries) > 0 {
+		clusterEntries, _ := readLogEntries(NodeLogPath(challengeKey, "cluster"))
+		entries = append(entries, clusterEntries...)
+	}
+
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].T < entries[j].T
 	})
+
+	deduped := entries[:0]
+	for i, e := range entries {
+		if i == 0 || e != entries[i-1] {
+			deduped = append(deduped, e)
+		}
+	}
+	entries = deduped
 
 	if len(entries) == 0 {
 		return nil
@@ -293,6 +311,22 @@ func RenderLogs(challengeKey string, nodeNames []string) error {
 	}
 
 	return nil
+}
+
+func writeClusterEvent(challengeKey, msg string) {
+	os.MkdirAll(logDir, 0755)
+	path := NodeLogPath(challengeKey, "cluster")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	json.NewEncoder(f).Encode(logEntry{
+		T:     time.Now().UnixNano(),
+		Node:  "**",
+		Event: msg,
+	})
 }
 
 func (n *containerNode) Annotate(msg string) {
