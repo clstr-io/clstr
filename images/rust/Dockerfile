@@ -1,4 +1,4 @@
-FROM rust:1.97
+FROM rust:1.99
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends iptables iproute2 && \
